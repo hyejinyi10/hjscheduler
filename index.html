@@ -315,7 +315,8 @@ async function getMsal(clientId){
   if(!window.msal)throw new Error('MSAL 라이브러리 로드 실패. 인터넷 연결 확인 후 새로고침 해주세요.');
   if(_msalApp&&_msalApp._bhClientId===clientId)return _msalApp;
   const cfg={auth:{clientId,authority:'https://login.microsoftonline.com/common',
-    redirectUri:'https://login.microsoftonline.com/common/oauth2/nativeclient',
+    // 로그인 후 스케줄러 자기 주소로 복귀 (Azure 앱 등록의 SPA 리디렉션 URI와 정확히 일치해야 함)
+    redirectUri:location.origin+location.pathname,
     navigateToLoginRequestUrl:false},
     cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}};
   const app=new window.msal.PublicClientApplication(cfg);
