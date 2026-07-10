@@ -1854,10 +1854,18 @@ function IcalFeedsSection(){
   const handleFetch=async(feed)=>{
     setBusy(feed.id);
     try{
-      const res=await fetch(feed.url);
-      if(!res.ok)throw new Error('HTTP '+res.status);
-      const text=await res.text();
-      if(text.indexOf('BEGIN:VCALENDAR')<0)throw new Error('ICS 형식이 아님');
+      const tries=[feed.url,'https://corsproxy.io/?url='+encodeURIComponent(feed.url),'https://api.allorigins.win/raw?url='+encodeURIComponent(feed.url)];
+      let text=null,lastErr=null;
+      for(const u of tries){
+        try{
+          const res=await fetch(u);
+          if(!res.ok)throw new Error('HTTP '+res.status);
+          const t=await res.text();
+          if(t.indexOf('BEGIN:VCALENDAR')<0)throw new Error('ICS 형식이 아님');
+          text=t;break;
+        }catch(e2){lastErr=e2;}
+      }
+      if(!text)throw(lastErr||new Error('가져오기 실패'));
       const now=new Date();const iso=(d)=>d.toISOString().slice(0,10);
       const lo=iso(new Date(now.getTime()-7*86400e3)),hi=iso(new Date(now.getTime()+60*86400e3));
       const parsed=parseICS(text,lo,hi);
@@ -1866,7 +1874,7 @@ function IcalFeedsSection(){
       dispatch({type:'ICAL_IMPORT',feedId:feed.id,events,lo,hi,layerName:feed.name,layerColor:feed.color});
       showToast('『'+feed.name+'』 일정 '+events.length+'건 가져옴 (지난주~+60일)','success');
     }catch(err){
-      showToast('브라우저에서 직접 가져올 수 없는 주소예요 (보안 정책상 구글·아웃룩은 대부분 차단). 주소는 저장돼 있으니 아침 자동 동기화가 대신 가져오게 할 수 있어요.','error');
+      showToast('가져오기 실패 — 주소가 정확한지 확인해 주세요 (중계 서버 경유까지 시도했지만 응답이 없었어요)','error');
     }
     setBusy(null);
   };
@@ -1882,6 +1890,7 @@ function IcalFeedsSection(){
         <b>iCal(ICS) 주소로 외부 캘린더 구독</b><br/>
         구글 캘린더: 설정 → 내 캘린더 → <b>"iCal 형식의 비밀 주소"</b> 복사<br/>
         가져온 일정은 캘린더별 레이어로 표시되고, 우상단에서 켜고 끄거나 색을 바꿀 수 있어요.<br/>
+        직접 연결이 막힌 주소(구글 등)는 자동으로 중계 서버(corsproxy.io)를 거쳐 가져와요.<br/>
         ⚠ 비밀 주소는 캘린더 열쇠와 같으니 다른 곳에 공유하지 마세요.
       </div>
       {feeds.map(feed=>(
