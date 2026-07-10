@@ -1771,6 +1771,31 @@ function ThemePopover({onClose,side}){
     </div>
   );
 }
+function IcalAutoSync(){
+  const{state,dispatch}=useStore();
+  const ranRef=useRef(false);
+  useEffect(()=>{
+    const t=setTimeout(async()=>{
+      if(ranRef.current)return;
+      const feeds=state.icalFeeds||[];
+      if(!feeds.length)return;
+      ranRef.current=true;
+      for(const feed of feeds){
+        try{
+          const text=await icalFetchIcsText(feed.url);
+          const now=new Date();const iso=(d)=>d.toISOString().slice(0,10);
+          const lo=iso(new Date(now.getTime()-7*86400e3)),hi=iso(new Date(now.getTime()+60*86400e3));
+          const parsed=parseICS(text,lo,hi);
+          const lid='ical_'+feed.id;
+          const events=parsed.map(p=>Object.assign({id:'ic_'+feed.id+'_'+_icHash(p.uid),date:p.date,title:p.title,category:lid,icalFeed:feed.id,projectId:null},p.time?{time:p.time}:{}));
+          dispatch({type:'ICAL_IMPORT',feedId:feed.id,events,lo,hi,layerName:feed.name,layerColor:feed.color});
+        }catch(e){}
+      }
+    },5000);
+    return()=>clearTimeout(t);
+  },[state.icalFeeds]);
+  return null;
+}
 function ThemeButton({side}){
   const[open,setOpen]=useState(false);
   return(
@@ -1833,6 +1858,20 @@ function parseICS(text,lo,hi){
   }
   return out;
 }
+async function icalFetchIcsText(url){
+  const tries=[url,'https://corsproxy.io/?url='+encodeURIComponent(url),'https://api.allorigins.win/raw?url='+encodeURIComponent(url)];
+  let lastErr=null;
+  for(const u of tries){
+    try{
+      const res=await fetch(u);
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const t=await res.text();
+      if(t.indexOf('BEGIN:VCALENDAR')<0)throw new Error('ICS 형식이 아님');
+      return t;
+    }catch(e2){lastErr=e2;}
+  }
+  throw(lastErr||new Error('가져오기 실패'));
+}
 const ICAL_COLORS=['#4A7FB5','#5E8B6E','#C2727B','#8E7CC3','#B79C7A','#63636B'];
 function IcalFeedsSection(){
   const{state,dispatch}=useStore();
@@ -1854,18 +1893,7 @@ function IcalFeedsSection(){
   const handleFetch=async(feed)=>{
     setBusy(feed.id);
     try{
-      const tries=[feed.url,'https://corsproxy.io/?url='+encodeURIComponent(feed.url),'https://api.allorigins.win/raw?url='+encodeURIComponent(feed.url)];
-      let text=null,lastErr=null;
-      for(const u of tries){
-        try{
-          const res=await fetch(u);
-          if(!res.ok)throw new Error('HTTP '+res.status);
-          const t=await res.text();
-          if(t.indexOf('BEGIN:VCALENDAR')<0)throw new Error('ICS 형식이 아님');
-          text=t;break;
-        }catch(e2){lastErr=e2;}
-      }
-      if(!text)throw(lastErr||new Error('가져오기 실패'));
+      const text=await icalFetchIcsText(feed.url);
       const now=new Date();const iso=(d)=>d.toISOString().slice(0,10);
       const lo=iso(new Date(now.getTime()-7*86400e3)),hi=iso(new Date(now.getTime()+60*86400e3));
       const parsed=parseICS(text,lo,hi);
@@ -4454,6 +4482,7 @@ function App(){
       <StoreProvider>
         <ToastProvider>
           <TopBar/>
+          <IcalAutoSync/>
           <LeftPanel/>
           <PanelToggle/>
           <MainArea/>
