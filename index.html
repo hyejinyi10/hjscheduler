@@ -76,6 +76,8 @@ if(!localStorage.getItem('snapImgPurgeV1')){
   try{const _s=JSON.parse(localStorage.getItem('snapshots')||'[]');_s.forEach(x=>{if(x&&x.state)delete x.state.topBarImg;});localStorage.setItem('snapshots',JSON.stringify(_s));}catch{}
   localStorage.setItem('snapImgPurgeV1','1');
 }
+// 색 기본값 정화: CSS 변수 문자열이 저장돼 있으면 hex로 교정
+try{const _wc=localStorage.getItem('workColor');if(_wc&&_wc.indexOf('var(')!==-1)localStorage.setItem('workColor',JSON.stringify('#B79C7A'));}catch{}
 if(!localStorage.getItem('olTitleNFC')){
   try{
     const _evs=JSON.parse(localStorage.getItem('weeklyEvents')||'[]');
@@ -139,7 +141,7 @@ const getHoliday = (dk) => _HD[dk] || _HD[dk.slice(5)] || null;
 const uid = () => Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const lsLoad = (k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}};
 const lsSave = (k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
-const lighten = (hex,a=0.88)=>{if(!hex)return'#F5F5F5';const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgb(${Math.round(r+(255-r)*a)},${Math.round(g+(255-g)*a)},${Math.round(b+(255-b)*a)})`;};
+const lighten = (hex,a=0.88)=>{if(!hex||hex[0]!=='#'||hex.length<7)return'#F5F5F5';const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgb(${Math.round(r+(255-r)*a)},${Math.round(g+(255-g)*a)},${Math.round(b+(255-b)*a)})`;};
 
 // ─── DATE UTILS ──────────────────────────────
 const toDateKey = (d)=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return`${y}-${m}-${day}`;};
@@ -193,12 +195,13 @@ const initProjects=[{id:uid(),name:'업무 프로젝트',color:'#7F77DD',layer:'
 const initialState={
   workVisible:lsLoad('workVisible',true),personalVisible:lsLoad('personalVisible',true),
   workLabel:lsLoad('workLabel','업무'),personalLabel:lsLoad('personalLabel','개인'),
-  workColor:lsLoad('workColor','var(--acc)'),personalColor:lsLoad('personalColor','#185FA5'),
+  workColor:lsLoad('workColor','#B79C7A'),personalColor:lsLoad('personalColor','#185FA5'),
   titleText:lsLoad('titleText','혜진 스케줄러'),topBarBg:lsLoad('topBarBg','#ffffff'),topBarImg:lsLoad('topBarImg',''),
   themeAccent:lsLoad('themeAccent','#B79C7A'),panelBg:lsLoad('panelBg',''),panelImg:lsLoad('panelImg',''),weeklyBg:lsLoad('weeklyBg',''),monthlyBg:lsLoad('monthlyBg',''),
   outlookVisible:lsLoad('outlookVisible',true),outlookColor:lsLoad('outlookColor','#BA7517'),
   customLayers:lsLoad('customLayers',[]),
   layerOrder:lsLoad('layerOrder',['work','personal']),
+  icalFeeds:lsLoad('icalFeeds',[]),
   meetingNotes:lsLoad('meetingNotes',[]),
   projects:lsLoad('projects',initProjects),
   monthlyHighlights:lsLoad('monthlyHighlights',[]),projectMemos:lsLoad('projectMemos',{}),
@@ -272,6 +275,23 @@ function reducer(state,action){
     case 'SET_TOPBAR_BG':return{...state,topBarBg:action.bg};
     case 'SET_TOPBAR_IMG':return{...state,topBarImg:action.img};
     case 'SET_THEME':return{...state,[action.key]:action.value};
+    case 'SET_ICAL_FEEDS':return{...state,icalFeeds:action.feeds};
+    case 'ICAL_IMPORT':{
+      const lid='ical_'+action.feedId;
+      const keep=(state.weeklyEvents||[]).filter(e=>!(e.icalFeed===action.feedId&&e.date>=action.lo&&e.date<=action.hi));
+      let customLayers=state.customLayers||[];let layerOrder=state.layerOrder||['work','personal'];
+      if(!customLayers.find(l=>l.id===lid)){customLayers=[...customLayers,{id:lid,name:action.layerName,color:action.layerColor,visible:true}];}
+      if(!layerOrder.includes(lid))layerOrder=[...layerOrder,lid];
+      return{...state,weeklyEvents:[...keep,...action.events],customLayers,layerOrder};
+    }
+    case 'ICAL_REMOVE_FEED':{
+      const lid='ical_'+action.feedId;
+      return{...state,
+        icalFeeds:(state.icalFeeds||[]).filter(f=>f.id!==action.feedId),
+        weeklyEvents:(state.weeklyEvents||[]).filter(e=>e.icalFeed!==action.feedId),
+        customLayers:(state.customLayers||[]).filter(l=>l.id!==lid),
+        layerOrder:(state.layerOrder||[]).filter(id=>id!==lid)};
+    }
     case 'ADD_STICKY_NOTE':return{...state,stickyNotes:[...state.stickyNotes,{id:uid(),...action.note}]};
     case 'UPDATE_STICKY_NOTE':return{...state,stickyNotes:state.stickyNotes.map(n=>n.id===action.id?{...n,...action.updates}:n)};
     case 'DELETE_STICKY_NOTE':return{...state,stickyNotes:state.stickyNotes.filter(n=>n.id!==action.id)};
@@ -527,6 +547,7 @@ function SettingsModal({onClose}){
         {/* tabs */}
         <div style={{display:'flex',borderBottom:'1px solid #F0F0F0',padding:'0 20px',gap:4,marginTop:4}}>
           <button style={tabStyle(tab==='outlook')} onClick={()=>setTab('outlook')}>아웃룩 연동</button>
+          <button style={tabStyle(tab==='ical')} onClick={()=>setTab('ical')}>캘린더 구독</button>
           <button style={tabStyle(tab==='backup')} onClick={()=>setTab('backup')}>백업 관리</button>
           <button style={tabStyle(tab==='cloud')} onClick={()=>setTab('cloud')}>클라우드 동기화</button>
         </div>
@@ -583,6 +604,7 @@ function SettingsModal({onClose}){
               </div>
             </div>
           )}
+          {tab==='ical'&&<IcalFeedsSection/>}
           {tab==='backup'&&(
             <div style={{display:'flex',flexDirection:'column',gap:14}}>
               <div style={{display:'flex',gap:8}}>
@@ -822,7 +844,7 @@ function StoreProvider({children}){
         'weeklyEvents','todos','weekMemos','weeklyCollapsed','multiDayBlocks','outlookVisible','outlookColor',
         'customLayers','layerOrder','meetingNotes','stickyNotes','placedStickers','workLabel','personalLabel','workColor','personalColor',
         'titleText','topBarBg','topBarImg',
-        'themeAccent','panelBg','panelImg','weeklyBg','monthlyBg',
+        'themeAccent','panelBg','panelImg','weeklyBg','monthlyBg','icalFeeds',
         'outlookUser','outlookClientId','outlookSyncedAt'];
       LS_KEYS.forEach(k=>lsSave(k,state[k]));
       // Also push to cloud if configured — cloudLoad 완료 후에만 실행
@@ -895,7 +917,7 @@ const useToast=()=>useContext(ToastContext);
 // Dynamic CAT style based on customizable category colors
 const useDynCatStyle=()=>{
   const{state}=useStore();
-  const wc=state.workColor||'var(--acc)';
+  const wc=state.workColor||'#B79C7A';
   const pc=state.personalColor||'#185FA5';
   const oc=state.outlookColor||'#BA7517';
   const base={
@@ -1760,6 +1782,130 @@ function ThemeButton({side}){
     </div>
   );
 }
+// ═══ iCal(ICS) 캘린더 구독 ═══
+const _icHash=(s)=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(36);};
+function parseICS(text,lo,hi){
+  const lines=text.replace(/\r\n[ \t]/g,'').replace(/\n[ \t]/g,'').split(/\r?\n/);
+  const evs=[];let cur=null;
+  for(const ln of lines){
+    if(ln==='BEGIN:VEVENT'){cur={};continue;}
+    if(ln==='END:VEVENT'){if(cur)evs.push(cur);cur=null;continue;}
+    if(!cur)continue;
+    const ci=ln.indexOf(':');if(ci<0)continue;
+    const key=ln.slice(0,ci),val=ln.slice(ci+1),k=key.split(';')[0];
+    if(k==='SUMMARY')cur.summary=val.replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\n/g,' ');
+    else if(k==='DTSTART'){cur.dt=val;cur.allDay=key.indexOf('VALUE=DATE')>-1&&val.length===8;}
+    else if(k==='RRULE')cur.rrule=val;
+    else if(k==='UID')cur.uid=val;
+    else if(k==='STATUS')cur.status=val;
+  }
+  const pad=(x)=>String(x).padStart(2,'0');
+  const addD=(iso,k)=>{const t=new Date(iso+'T12:00:00Z');t.setUTCDate(t.getUTCDate()+k);return t.toISOString().slice(0,10);};
+  const dow=(iso)=>new Date(iso+'T12:00:00Z').getUTCDay();
+  const BY={SU:0,MO:1,TU:2,WE:3,TH:4,FR:5,SA:6};
+  const out=[];
+  for(const e of evs){
+    if(!e.dt||!e.summary||e.status==='CANCELLED')continue;
+    let date,time=null;
+    if(e.allDay){date=e.dt.slice(0,4)+'-'+e.dt.slice(4,6)+'-'+e.dt.slice(6,8);}
+    else{
+      const y=+e.dt.slice(0,4),mo=+e.dt.slice(4,6),d=+e.dt.slice(6,8),h=+e.dt.slice(9,11)||0,mi=+e.dt.slice(11,13)||0;
+      if(e.dt.slice(-1)==='Z'){const t=new Date(Date.UTC(y,mo-1,d,h,mi)+9*3600e3);date=t.toISOString().slice(0,10);time=pad(t.getUTCHours())+':'+pad(t.getUTCMinutes());}
+      else{date=y+'-'+pad(mo)+'-'+pad(d);time=pad(h)+':'+pad(mi);}
+    }
+    const dates=[];
+    if(e.rrule){
+      const fr=(e.rrule.match(/FREQ=(\w+)/)||[])[1];
+      const until=(e.rrule.match(/UNTIL=(\d{8})/)||[])[1];
+      const end=until?[until.slice(0,4),until.slice(4,6),until.slice(6,8)].join('-'):hi;
+      const stop=end<hi?end:hi;
+      const from=date>lo?date:lo;
+      if(fr==='WEEKLY'){
+        const bydayM=(e.rrule.match(/BYDAY=([A-Z,]+)/)||[])[1];
+        const days=bydayM?bydayM.split(',').map(x=>BY[x]).filter(x=>x!==undefined):[dow(date)];
+        for(let cd=from;cd<=stop;cd=addD(cd,1)){if(days.indexOf(dow(cd))>-1)dates.push(cd);}
+      }else if(fr==='DAILY'){for(let cd=from;cd<=stop;cd=addD(cd,1))dates.push(cd);}
+      else if(fr==='YEARLY'){const mmdd=date.slice(5);for(let y2=+lo.slice(0,4);y2<=+hi.slice(0,4);y2++){const s=y2+'-'+mmdd;if(s>=from&&s<=stop)dates.push(s);}}
+      else if(fr==='MONTHLY'){const dd=date.slice(8);let cd=lo.slice(0,7);for(let k=0;k<26;k++){const s=cd+'-'+dd;if(s>stop)break;if(s>=from)dates.push(s);let y2=+cd.slice(0,4),m2=+cd.slice(5,7)+1;if(m2>12){m2=1;y2++;}cd=y2+'-'+pad(m2);}}
+      else if(date>=lo&&date<=hi)dates.push(date);
+    }else if(date>=lo&&date<=hi)dates.push(date);
+    for(const dt of dates)out.push({date:dt,time,title:e.summary,uid:(e.uid||e.summary)+'_'+dt});
+  }
+  return out;
+}
+const ICAL_COLORS=['#4A7FB5','#5E8B6E','#C2727B','#8E7CC3','#B79C7A','#63636B'];
+function IcalFeedsSection(){
+  const{state,dispatch}=useStore();
+  const showToast=useToast();
+  const[newName,setNewName]=useState('');
+  const[newUrl,setNewUrl]=useState('');
+  const[busy,setBusy]=useState(null);
+  const feeds=state.icalFeeds||[];
+  const handleAdd=()=>{
+    const u=newUrl.trim();let nm=newName.trim();
+    if(!u)return;
+    if(!/^https?:\/\//.test(u)&&!/^webcal:\/\//.test(u)){showToast('http(s):// 또는 webcal:// 로 시작하는 주소를 넣어주세요','error');return;}
+    if(!nm)nm='캘린더 '+(feeds.length+1);
+    const f={id:_icHash(u+Date.now()),name:nm,url:u.replace(/^webcal:\/\//,'https://'),color:ICAL_COLORS[feeds.length%ICAL_COLORS.length]};
+    dispatch({type:'SET_ICAL_FEEDS',feeds:[...feeds,f]});
+    setNewName('');setNewUrl('');
+    showToast('캘린더 주소 저장됨 — "지금 가져오기"를 눌러보세요','success');
+  };
+  const handleFetch=async(feed)=>{
+    setBusy(feed.id);
+    try{
+      const res=await fetch(feed.url);
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const text=await res.text();
+      if(text.indexOf('BEGIN:VCALENDAR')<0)throw new Error('ICS 형식이 아님');
+      const now=new Date();const iso=(d)=>d.toISOString().slice(0,10);
+      const lo=iso(new Date(now.getTime()-7*86400e3)),hi=iso(new Date(now.getTime()+60*86400e3));
+      const parsed=parseICS(text,lo,hi);
+      const lid='ical_'+feed.id;
+      const events=parsed.map(p=>Object.assign({id:'ic_'+feed.id+'_'+_icHash(p.uid),date:p.date,title:p.title,category:lid,icalFeed:feed.id,projectId:null},p.time?{time:p.time}:{}));
+      dispatch({type:'ICAL_IMPORT',feedId:feed.id,events,lo,hi,layerName:feed.name,layerColor:feed.color});
+      showToast('『'+feed.name+'』 일정 '+events.length+'건 가져옴 (지난주~+60일)','success');
+    }catch(err){
+      showToast('브라우저에서 직접 가져올 수 없는 주소예요 (보안 정책상 구글·아웃룩은 대부분 차단). 주소는 저장돼 있으니 아침 자동 동기화가 대신 가져오게 할 수 있어요.','error');
+    }
+    setBusy(null);
+  };
+  const handleRemove=(feed)=>{
+    if(!confirm('『'+feed.name+'』 구독과 가져온 일정을 삭제할까요?'))return;
+    dispatch({type:'ICAL_REMOVE_FEED',feedId:feed.id});
+    showToast('삭제됨','success');
+  };
+  const inputStyle={width:'100%',fontSize:12,padding:'7px 10px',border:'0.5px solid #E0E0E0',borderRadius:6,outline:'none',boxSizing:'border-box'};
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{backgroundColor:'var(--acc-bg)',borderRadius:8,padding:'12px 14px',fontSize:11,color:'var(--acc-strong)',lineHeight:1.7}}>
+        <b>iCal(ICS) 주소로 외부 캘린더 구독</b><br/>
+        구글 캘린더: 설정 → 내 캘린더 → <b>"iCal 형식의 비밀 주소"</b> 복사<br/>
+        가져온 일정은 캘린더별 레이어로 표시되고, 우상단에서 켜고 끄거나 색을 바꿀 수 있어요.<br/>
+        ⚠ 비밀 주소는 캘린더 열쇠와 같으니 다른 곳에 공유하지 마세요.
+      </div>
+      {feeds.map(feed=>(
+        <div key={feed.id} style={{border:'0.5px solid #ECECF0',borderRadius:8,padding:'10px 12px',display:'flex',flexDirection:'column',gap:6}}>
+          <div style={{display:'flex',alignItems:'center',gap:7}}>
+            <span style={{width:9,height:9,borderRadius:'50%',backgroundColor:feed.color,flexShrink:0}}/>
+            <span style={{fontSize:13,fontWeight:600,color:'#333',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{feed.name}</span>
+            <button disabled={busy===feed.id} onClick={()=>handleFetch(feed)}
+              style={{fontSize:11,padding:'3px 10px',borderRadius:5,backgroundColor:'var(--acc)',color:'#fff',opacity:busy===feed.id?0.6:1,cursor:'pointer'}}>
+              {busy===feed.id?'가져오는 중…':'지금 가져오기'}</button>
+            <button onClick={()=>handleRemove(feed)} style={{fontSize:11,padding:'3px 8px',borderRadius:5,color:'#E24B4A',border:'0.5px solid #FFCDD2',cursor:'pointer'}}>삭제</button>
+          </div>
+          <div style={{fontSize:10,color:'#B0B0B8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{feed.url.slice(0,60)}…</div>
+        </div>
+      ))}
+      <div style={{border:'0.5px dashed #D8D8DE',borderRadius:8,padding:'12px',display:'flex',flexDirection:'column',gap:7}}>
+        <div style={{fontSize:11,fontWeight:600,color:'#666'}}>+ 캘린더 추가</div>
+        <input placeholder="이름 (예: 구글 개인)" value={newName} onChange={e=>setNewName(e.target.value)} style={inputStyle}/>
+        <input placeholder="iCal/ICS 주소 (https://… 또는 webcal://…)" value={newUrl} onChange={e=>setNewUrl(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleAdd();}} style={inputStyle}/>
+        <button onClick={handleAdd} style={{alignSelf:'flex-start',fontSize:11.5,padding:'5px 14px',borderRadius:6,backgroundColor:'var(--acc)',color:'#fff',cursor:'pointer'}}>저장</button>
+      </div>
+    </div>
+  );
+}
 function TopBar(){
   const{state,dispatch}=useStore();
   const{workVisible,personalVisible,outlookVisible,customLayers,layerOrder,workLabel,personalLabel,workColor,personalColor,titleText,topBarBg,topBarImg}=state;
@@ -2194,6 +2340,8 @@ function MemoItem({memo,projectId,projectColor,memoIdx,memoCount,dispatch}){
   );
 }
 function ProjectItem({project,dragId,dragOverId,onDragStart,onDragEnd,onDragOver,onDrop}){
+  const dynCat=useDynCatStyle();
+  const layerTint=(project.layer==='personal'?dynCat.personal:dynCat.work).dot;
   const{state,dispatch}=useStore();
   const memos=React.useMemo(()=>getMemoList(state.projectMemos[project.id]),[state.projectMemos,project.id]);
   const[hovered,setHovered]=useState(false);const[editing,setEditing]=useState(false);const[nameVal,setNameVal]=useState(project.name);const[cpOpen,setCpOpen]=useState(false);
@@ -2224,11 +2372,11 @@ function ProjectItem({project,dragId,dragOverId,onDragStart,onDragEnd,onDragOver
       <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:2}}>
         <span title="드래그해서 순서 변경" style={{fontSize:12,color:hovered?'#C8C8C8':'transparent',cursor:'grab',flexShrink:0,lineHeight:1,transition:'color 0.15s',userSelect:'none'}}>⠿</span>
         <div style={{position:'relative',flexShrink:0}}>
-          <div onClick={()=>setCpOpen(v=>!v)} style={{width:9,height:9,borderRadius:'50%',backgroundColor:project.color,cursor:'pointer',border:`1.5px solid ${project.color}`,transition:'transform 0.1s'}} onMouseEnter={e=>e.currentTarget.style.transform='scale(1.2)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}/>
-          {cpOpen&&<ColorPickerPopover selectedColor={project.color} onSelect={c=>dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{color:c}})} onClose={()=>setCpOpen(false)} style={{top:12,left:0}}/>}
+          <div onClick={()=>setCpOpen(v=>!v)} title="레이어 색 변경 (우상단 칩과 연동)" style={{width:9,height:9,borderRadius:'50%',backgroundColor:layerTint,cursor:'pointer',border:`1.5px solid ${layerTint}`,transition:'transform 0.1s'}} onMouseEnter={e=>e.currentTarget.style.transform='scale(1.2)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}/>
+          {cpOpen&&<ColorPickerPopover selectedColor={layerTint} onSelect={c=>{dispatch(project.layer==='personal'?{type:'UPDATE_PERSONAL_CAT',color:c}:{type:'UPDATE_WORK_CAT',color:c});dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{color:c}});}} onClose={()=>setCpOpen(false)} style={{top:12,left:0}}/>}
         </div>
-        {editing?<input autoFocus value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>{if(e.key==='Enter')saveName();if(e.key==='Escape'){setNameVal(project.name);setEditing(false);}}} style={{flex:1,fontSize:13,fontWeight:500,color:project.color,borderBottom:`0.5px solid ${project.color}`,paddingBottom:1,minWidth:0}}/>:<span onDoubleClick={()=>{setNameVal(project.name);setEditing(true);}} style={{flex:1,fontSize:13,fontWeight:500,color:project.color,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text',minWidth:0}}>{project.name}</span>}
-        <button onClick={()=>dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{layer:project.layer==='work'?'personal':'work'}})} title={project.layer==='personal'?'개인→업무':'업무→개인'} style={{fontSize:10,padding:'1px 4px',borderRadius:3,flexShrink:0,opacity:0.6,border:'0.5px solid #E0E0E0',color:project.layer==='personal'?'#185FA5':'var(--acc)',backgroundColor:project.layer==='personal'?'#E6F1FB':'var(--acc-bg)'}}>{project.layer==='personal'?'개인':'업무'}</button>
+        {editing?<input autoFocus value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>{if(e.key==='Enter')saveName();if(e.key==='Escape'){setNameVal(project.name);setEditing(false);}}} style={{flex:1,fontSize:13,fontWeight:500,color:layerTint,borderBottom:`0.5px solid ${layerTint}`,paddingBottom:1,minWidth:0}}/>:<span onDoubleClick={()=>{setNameVal(project.name);setEditing(true);}} style={{flex:1,fontSize:13,fontWeight:500,color:layerTint,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text',minWidth:0}}>{project.name}</span>}
+        <button onClick={()=>dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{layer:project.layer==='work'?'personal':'work'}})} title={project.layer==='personal'?'개인→업무':'업무→개인'} style={{fontSize:10,padding:'1px 4px',borderRadius:3,flexShrink:0,border:'0.5px solid #E0E0E0',color:project.layer==='personal'?dynCat.personal.text:dynCat.work.text,backgroundColor:project.layer==='personal'?dynCat.personal.bg:dynCat.work.bg}}>{project.layer==='personal'?(state.personalLabel||'개인'):(state.workLabel||'업무')}</button>
         {hovered&&!editing&&<button onClick={()=>dispatch({type:'DELETE_PROJECT',id:project.id})} style={{fontSize:13,color:'#CCC',lineHeight:1,flexShrink:0,padding:'1px 2px'}} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>}
       </div>
       <div>
@@ -2247,7 +2395,8 @@ function ProjectItem({project,dragId,dragOverId,onDragStart,onDragEnd,onDragOver
 }
 function ProjectsSection(){
   const{state,dispatch}=useStore();const[adding,setAdding]=useState(false);const[newName,setNewName]=useState('');const[newColor,setNewColor]=useState(PROJECT_COLORS[3]);const[cpOpen,setCpOpen]=useState(false);const nameRef=useRef(null);
-  const[newLayer,setNewLayer]=useState('work');const handleAdd=()=>{const t=newName.trim();if(!t)return;dispatch({type:'ADD_PROJECT',name:t,color:newColor,layer:newLayer});setNewName('');setNewColor(PROJECT_COLORS[3]);setAdding(false);};
+  const[newLayer,setNewLayer]=useState('work');
+  const dynCat=useDynCatStyle();const handleAdd=()=>{const t=newName.trim();if(!t)return;dispatch({type:'ADD_PROJECT',name:t,color:newColor,layer:newLayer});setNewName('');setNewColor(PROJECT_COLORS[3]);setAdding(false);};
   const[dragId,setDragId]=useState(null);const[dragOverId,setDragOverId]=useState(null);
   const handleDragStart=(id)=>{setDragId(id);setDragOverId(null);};
   const handleDragEnd=()=>{setDragId(null);setDragOverId(null);};
@@ -2271,7 +2420,7 @@ function ProjectsSection(){
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
           <div style={{position:'relative',flexShrink:0}}><div onClick={()=>setCpOpen(v=>!v)} style={{width:14,height:14,borderRadius:'50%',backgroundColor:newColor,cursor:'pointer',border:`1.5px solid ${newColor}`}}/>{cpOpen&&<ColorPickerPopover selectedColor={newColor} onSelect={c=>setNewColor(c)} onClose={()=>setCpOpen(false)} style={{top:18,left:0}}/>}</div>
           <input ref={nameRef} value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleAdd();if(e.key==='Escape')setAdding(false);}} placeholder="프로젝트명" style={{flex:1,fontSize:13,color:'#333',borderBottom:'0.5px solid #E0E0E0',paddingBottom:2,minWidth:0}}/>
-          <button onClick={()=>setNewLayer(l=>l==='work'?'personal':'work')} style={{fontSize:10,padding:'1px 6px',borderRadius:3,border:'0.5px solid #E0E0E0',color:newLayer==='personal'?'#185FA5':'var(--acc)',backgroundColor:newLayer==='personal'?'#E6F1FB':'var(--acc-bg)',flexShrink:0}}>{newLayer==='personal'?'개인':'업무'}</button>
+          <button onClick={()=>setNewLayer(l=>l==='work'?'personal':'work')} style={{fontSize:10,padding:'1px 6px',borderRadius:3,border:'0.5px solid #E0E0E0',color:newLayer==='personal'?dynCat.personal.text:dynCat.work.text,backgroundColor:newLayer==='personal'?dynCat.personal.bg:dynCat.work.bg,flexShrink:0}}>{newLayer==='personal'?(state.personalLabel||'개인'):(state.workLabel||'업무')}</button>
         </div>
         <div style={{display:'flex',gap:5,justifyContent:'flex-end'}}>
           <button onClick={()=>setAdding(false)} style={{fontSize:12,color:'#999',padding:'3px 8px',border:'0.5px solid #E0E0E0',borderRadius:4}}>취소</button>
@@ -3580,8 +3729,8 @@ function EventChip({event,onClick}){
   const catStyle=useDynCatStyle();const cs=catStyle[event.category]||catStyle.work;
   const{state}=useStore();const bdayPfx=getBdayPrefix(event.category,state);
   const isBday=bdayPfx!=='';
-  const chipStyle=isBday?{backgroundColor:'transparent',borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.55,overflow:'hidden',whiteSpace:'nowrap',cursor:'pointer',maxWidth:'100%'}:{backgroundColor:cs.bg,boxShadow:'inset 2.5px 0 0 '+(cs.dot||cs.text),borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.55,overflow:'hidden',whiteSpace:'nowrap',cursor:'pointer',maxWidth:'100%'};
-  return<div onClick={onClick} style={{display:'flex',alignItems:'center',gap:3,padding:'1px 5px 1px 8px',...chipStyle}}>{event.time&&<span style={{opacity:0.7,flexShrink:0,fontSize:10.5,fontVariantNumeric:'tabular-nums'}}>{event.time}</span>}<span style={{overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{bdayPfx}{event.title}</span>{event.isOutlook&&<span style={{flexShrink:0}}>🔗</span>}</div>;
+  const chipStyle=isBday?{backgroundColor:'transparent',borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0}:{backgroundColor:cs.bg,boxShadow:'inset 2.5px 0 0 '+(cs.dot||cs.text),borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0};
+  return<div onClick={onClick} style={{display:'flex',alignItems:'flex-start',gap:3,padding:'2px 5px 2px 8px',...chipStyle}}>{event.time&&<span style={{opacity:0.7,flexShrink:0,fontSize:10.5,fontVariantNumeric:'tabular-nums'}}>{event.time}</span>}<span style={{flex:1,minWidth:0,whiteSpace:'normal',wordBreak:'break-all',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{bdayPfx}{event.title}</span>{event.isOutlook&&<span style={{flexShrink:0}}>🔗</span>}</div>;
 }
 function TodoItem({todo,onToggle,onDelete}){
   const[hovered,setHovered]=useState(false);const catStyle=useDynCatStyle();const cs=catStyle[todo.category]||catStyle.work;
@@ -3676,7 +3825,7 @@ function WeeklyGrid({weekOffset,colH}){
   const evtH=Math.max(22,maxEvtCount*21+5);
   return(
     <div style={{position:'relative',backgroundColor:'#EDEDF1',height:'100%'}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'1px',alignItems:'stretch',height:'100%'}}>{weekDates.map(date=><DayColumn key={toDateKey(date)} date={date} onAddEvent={dk=>setPopoverDate(dk)} colH={colH} evtH={evtH}/>)}</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',gap:'1px',alignItems:'stretch',height:'100%'}}>{weekDates.map(date=><DayColumn key={toDateKey(date)} date={date} onAddEvent={dk=>setPopoverDate(dk)} colH={colH} evtH={evtH}/>)}</div>
       {popoverDate&&<EventPopover date={popoverDate} onClose={()=>setPopoverDate(null)}/>}
     </div>
   );
@@ -3798,7 +3947,7 @@ function CalendarDateCell({date,holiday,events,isInDragRange,onMouseDown,onMouse
   return(
     <div className="cal-cell" onMouseDown={onMouseDown} onMouseEnter={onMouseEnter} onMouseUp={onMouseUp}
       onDoubleClick={onDoubleClick}
-      style={{minHeight:162,padding:'5px 7px 5px',backgroundColor:cellBg,
+      style={{minHeight:162,minWidth:0,overflow:'hidden',padding:'5px 7px 5px',backgroundColor:cellBg,
         borderRight:cellBorder,borderBottom:cellBorder,cursor:'pointer',userSelect:'none',
         display:'flex',flexDirection:'column',gap:1}}>
       {/* Date number */}
@@ -3822,12 +3971,12 @@ function CalendarDateCell({date,holiday,events,isInDragRange,onMouseDown,onMouse
             const isBdayEv=getBdayPrefix(ev.category,state)!=='';
             return(
               <div key={ev.id} onClick={e=>{e.stopPropagation();onEventClick&&onEventClick(ev);}}
-                style={{display:'flex',alignItems:'center',gap:3,padding:'1.5px 5px 1.5px 8px',
+                style={{display:'flex',alignItems:'flex-start',gap:3,padding:'2px 5px 2px 8px',
                   backgroundColor:isBdayEv?'transparent':cs.bg,borderRadius:4,overflow:'hidden',
                   boxShadow:isBdayEv?'none':'inset 2.5px 0 0 '+(cs.dot||cs.text),
-                  cursor:'pointer',flexShrink:0,lineHeight:1.4}}>
+                  cursor:'pointer',flexShrink:0,lineHeight:1.4,minWidth:0}}>
                 {ev.time&&<span style={{fontSize:10.5,color:cs.text,opacity:0.75,flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{ev.time}</span>}
-                <span style={{fontSize:11.5,color:cs.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1,fontWeight:500}}>{getBdayPrefix(ev.category,state)}{ev.title}</span>
+                <span style={{fontSize:11.5,color:cs.text,flex:1,minWidth:0,fontWeight:500,whiteSpace:'normal',wordBreak:'break-all',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{getBdayPrefix(ev.category,state)}{ev.title}</span>
                 {ev.isOutlook&&<span style={{fontSize:10,flexShrink:0}}>🔗</span>}
               </div>
             );
@@ -3859,7 +4008,7 @@ function CalendarWeekRow({weekDates,eventsByDate,multiDayBlocks,drag,onCellMouse
   return(
     <div ref={ref_} style={{position:'relative'}}>
       {/* Date cells row - block area reserved at bottom */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',paddingBottom:blockAreaH}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',paddingBottom:blockAreaH}}>
         {weekDates.map(date=>{
           const dk=toDateKey(date);
           const inDrag=dragSorted&&dk>=dragSorted[0]&&dk<=dragSorted[1];
@@ -3934,7 +4083,7 @@ function YearView({year,onSelectMonth}){
         onMouseEnter={e=>{e.currentTarget.style.boxShadow='0 4px 14px rgba(var(--acc-rgb),0.13)';e.currentTarget.style.borderColor='var(--acc-brd)';}}
         onMouseLeave={e=>{e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.05)';e.currentTarget.style.borderColor='#EFEFEF';}}>
         <div style={{fontSize:13,fontWeight:700,color:'var(--acc)',marginBottom:10,paddingLeft:2,letterSpacing:'-0.2px'}}>{mo+1}월</div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',rowGap:2,columnGap:0}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',rowGap:2,columnGap:0}}>
           {['M','T','W','T','F','S','S'].map((d,i)=>(
             <div key={i} style={{textAlign:'center',fontSize:9,color:i===6?'#FDAAB0':i===5?'#A9C4E8':'#D0D0D0',paddingBottom:5,fontWeight:600,letterSpacing:'0.2px'}}>{d}</div>
           ))}
@@ -4169,7 +4318,7 @@ function CalendarSection(){
           <button onClick={goToday} style={{fontSize:12,color:'#fff',padding:'4px 12px',backgroundColor:'var(--acc)',borderRadius:6,fontWeight:600,flexShrink:0,boxShadow:'0 1px 3px rgba(var(--acc-rgb),0.28)'}} onMouseEnter={e=>e.currentTarget.style.backgroundColor='#463DA3'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='var(--acc)'}>오늘로</button>
         </div>
         {/* Day names row (sticky) — hidden in year view */}
-        {!yearView&&<div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',backgroundColor:'#F7F7FA',borderTop:'0.5px solid #EFEFF3'}}>
+        {!yearView&&<div style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',backgroundColor:'#F7F7FA',borderTop:'0.5px solid #EFEFF3'}}>
           {DAY_NAMES.map((d,i)=><div key={d} style={{textAlign:'center',padding:'5px 0',fontSize:11,color:i===6?'#E24B4A':i===5?'#4A7BC4':'#9A9AA2',fontWeight:600,letterSpacing:'0.5px'}}>{d}</div>)}
         </div>}
       </div>
