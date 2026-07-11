@@ -12,7 +12,8 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="favicon-192.png">
   <style>
-    :root{--acc:#B79C7A;--acc-strong:#8A7355;--acc-bg:#F5EFE6;--acc-soft:#FAF6F0;--acc-brd:#DECDB4;--acc-rgb:183,156,122;
+    :root{--acc:#B79C7A;
+    @media(max-width:767px){.desktop-only{display:none!important;}.mob-full{margin-left:0!important;}}--acc-strong:#8A7355;--acc-bg:#F5EFE6;--acc-soft:#FAF6F0;--acc-brd:#DECDB4;--acc-rgb:183,156,122;
       --w-bg:#fff;--w-cell:#fff;--m-bg:#fff;--m-cell:#fff;--p-bg:#FCFCFD;--p-img:none;}
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -883,6 +884,7 @@ const useStore=()=>useContext(StoreContext);
 
 // ─── LAYOUT CONTEXT (not persisted) ──────────
 const LayoutContext=React.createContext(null);
+function useIsMobile(){const[m,setM]=React.useState(()=>window.innerWidth<768);React.useEffect(()=>{const h=()=>setM(window.innerWidth<768);window.addEventListener('resize',h);return()=>window.removeEventListener('resize',h);},[]);return m;}
 const useLayout=()=>useContext(LayoutContext);
 
 // ─── TOAST SYSTEM ─────────────────────────────
@@ -1946,7 +1948,7 @@ function IcalFeedsSection(){
 function TopBar(){
   const{state,dispatch}=useStore();
   const{workVisible,personalVisible,outlookVisible,customLayers,layerOrder,workLabel,personalLabel,workColor,personalColor,titleText,topBarBg,topBarImg}=state;
-  const{freeLayerVisible,setFreeLayerVisible,stickerMode,setStickerMode,scrollToTodayRef}=useLayout();
+  const{freeLayerVisible,setFreeLayerVisible,stickerMode,setStickerMode,scrollToTodayRef,isMobile:_mob}=useLayout();
   const catStyle=useDynCatStyle();
   const[settingsOpen,setSettingsOpen]=useState(false);
   const showToast=useToast();
@@ -1998,8 +2000,8 @@ function TopBar(){
   const[dragId,setDragId]=useState(null);
   const[dragOverId,setDragOverId]=useState(null);
   return(<>
-    <div style={{position:'fixed',top:0,left:0,right:0,height:56,borderBottom:'0.5px solid #E9E9EE',boxShadow:'0 1px 4px rgba(20,20,43,0.04)',zIndex:1000,
-      display:'flex',alignItems:'center',padding:'0 14px 0 16px',gap:8,
+    <div style={{position:'fixed',top:0,left:0,right:0,height:_mob?48:56,borderBottom:'0.5px solid #E9E9EE',boxShadow:'0 1px 4px rgba(20,20,43,0.04)',zIndex:1000,
+      display:'flex',alignItems:'center',padding:_mob?'0 10px':'0 14px 0 16px',gap:_mob?5:8,
       backgroundImage:topBarImg?`url(${topBarImg})`:'none',backgroundSize:'cover',backgroundPosition:'center',
       backgroundColor:topBarBg||'#fff'}}>
       {/* Apple-style title — dblclick to edit */}
@@ -2058,7 +2060,7 @@ function TopBar(){
       )}
       <div style={{flex:1}}/>
       {/* Layer chips row — unified, all draggable */}
-      <div style={{display:'flex',alignItems:'center',gap:6,overflowX:'auto',flexShrink:1}}>
+      <div style={{display:_mob?'none':'flex',alignItems:'center',gap:6,overflowX:'auto',flexShrink:1}}>
         {(()=>{
           // Build ordered layer list from layerOrder + catStyle
           const orderedLayers=(layerOrder||['work','personal']).map(id=>{
@@ -4265,7 +4267,7 @@ function YearView({year,onSelectMonth}){
 }
 function CalendarSection(){
   const{state,dispatch}=useStore();
-  const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,calendarScrollRef,scrollToTodayRef}=useLayout();
+  const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,calendarScrollRef,scrollToTodayRef,isMobile}=useLayout();
   const showToast=useToast();
   const today_=new Date();
   const[navLabel,setNavLabel]=useState('');
@@ -4448,7 +4450,7 @@ function CalendarSection(){
         <StickerCanvas/>
       </div>
       {/* 노트·스티커 추가 FAB */}
-      {!yearView&&<button data-fab="true" onClick={()=>{setFreeLayerVisible(true);setStickerMode(true);setRightDockOpen(true);}}
+      {!yearView&&!isMobile&&<button data-fab="true" onClick={()=>{setFreeLayerVisible(true);setStickerMode(true);setRightDockOpen(true);}}
         title="포스트잇·스티커 추가"
         style={{position:'fixed',right:26,bottom:26,width:48,height:48,borderRadius:'50%',
           backgroundColor:'var(--acc)',color:'#fff',fontSize:26,fontWeight:300,lineHeight:1,zIndex:940,
@@ -4474,11 +4476,11 @@ function CalendarSection(){
 }
 // ─── MAIN AREA ───────────────────────────────
 function MainArea(){
-  const{leftWidth,leftCollapsed}=useLayout();
+  const{leftWidth,leftCollapsed,isMobile:_m}=useLayout();
   return(
-    <main style={{marginLeft:leftCollapsed?0:leftWidth,marginTop:56,height:'calc(100vh - 56px)',display:'flex',flexDirection:'column',backgroundColor:'#FAFAFA',transition:'margin-left 0.2s ease'}}>
-      <WeeklySection/>
-      <div style={{height:8,backgroundColor:'#F3F3F3',flexShrink:0,borderBottom:'0.5px solid #EBEBEB'}}/>
+    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginTop:_m?48:56,height:_m?'calc(100vh - 100px)':'calc(100vh - 56px)',display:'flex',flexDirection:'column',backgroundColor:'#FAFAFA',transition:'margin-left 0.2s ease',overflow:'auto'}}>
+      {!_m&&<WeeklySection/>}
+      {!_m&&<div style={{height:8,backgroundColor:'#F3F3F3',flexShrink:0,borderBottom:'0.5px solid #EBEBEB'}}/>}
       <CalendarSection/>
     </main>
   );
@@ -4525,7 +4527,49 @@ function RightDock(){
     </aside>
   );
 }
+function MobileBottomNav(){
+  const{mobileTab,setMobileTab}=useLayout();
+  return(
+    <nav style={{position:'fixed',bottom:0,left:0,right:0,height:52,backgroundColor:'#fff',
+      borderTop:'0.5px solid #E8E8EC',display:'flex',alignItems:'center',justifyContent:'space-around',zIndex:1100}}>
+      {[{id:'calendar',icon:'📅',label:'달력'},{id:'meetings',icon:'📋',label:'회의록'}].map(t=>(
+        <button key={t.id} onClick={()=>setMobileTab(t.id)}
+          style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'6px 0',
+            border:'none',backgroundColor:'transparent',cursor:'pointer',
+            color:mobileTab===t.id?'var(--acc)':'#AEAEB2',fontSize:10,fontWeight:mobileTab===t.id?600:400}}>
+          <span style={{fontSize:18}}>{t.icon}</span><span>{t.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+function MobileMeetings(){
+  const{state}=useStore();
+  const[modal,setModal]=React.useState(null);
+  const notes=React.useMemo(()=>{
+    const arr=Object.values(state.meetingNotes||{});
+    arr.sort((a,b)=>(b.date||'').localeCompare(a.date||''));return arr;
+  },[state.meetingNotes]);
+  return(
+    <div style={{marginTop:48,height:'calc(100vh - 100px)',overflow:'auto',backgroundColor:'#FAFAFA',padding:'12px 14px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+        <span style={{fontSize:15,fontWeight:700,color:'#333'}}>📋 회의록</span>
+        <button onClick={()=>setModal({})} style={{fontSize:12,padding:'5px 14px',borderRadius:8,backgroundColor:'var(--acc)',color:'#fff',border:'none',cursor:'pointer'}}>+ 새 회의록</button>
+      </div>
+      {notes.length===0&&<div style={{textAlign:'center',color:'#B4B4BC',fontSize:13,padding:'40px 0'}}>회의록이 없습니다</div>}
+      {notes.map(note=>(
+        <div key={note.id} onClick={()=>setModal(note)} style={{padding:'12px 14px',backgroundColor:'#fff',borderRadius:10,border:'0.5px solid #ECECF0',marginBottom:8,cursor:'pointer'}}>
+          <div style={{fontSize:13,fontWeight:600,color:'#333'}}>{note.title||'(제목 없음)'}</div>
+          <div style={{fontSize:11,color:'#A0A0A8',marginTop:3}}>{note.date||''}{note.time?' '+note.time:''}</div>
+        </div>
+      ))}
+      {modal&&<MeetingNoteModal initialNote={modal} onClose={()=>setModal(null)}/>}
+    </div>
+  );
+}
 function App(){
+  const isMobile=useIsMobile();
+  const[mobileTab,setMobileTab]=React.useState('calendar');
   const[leftWidth,setLeftWidth]=React.useState(300);
   const[leftCollapsed,setLeftCollapsed]=React.useState(false);
   const[weeklyHeight,setWeeklyHeight]=React.useState(220);
@@ -4540,15 +4584,16 @@ function App(){
   React.useEffect(()=>{if(activeNoteId)setRightDockOpen(true);},[activeNoteId]);
   React.useEffect(()=>{if(selectedStickerId)setRightDockOpen(true);},[selectedStickerId]);
   return(
-    <LayoutContext.Provider value={{leftWidth,setLeftWidth,leftCollapsed,setLeftCollapsed,weeklyHeight,setWeeklyHeight,freeLayerVisible,setFreeLayerVisible,calendarScrollRef,scrollToTodayRef,freeNotePanelHeight,setFreeNotePanelHeight,activeNoteId,setActiveNoteId,stickerMode,setStickerMode,selectedStickerId,setSelectedStickerId,rightDockOpen,setRightDockOpen}}>
+    <LayoutContext.Provider value={{leftWidth,setLeftWidth,leftCollapsed,setLeftCollapsed,weeklyHeight,setWeeklyHeight,freeLayerVisible,setFreeLayerVisible,calendarScrollRef,scrollToTodayRef,freeNotePanelHeight,setFreeNotePanelHeight,activeNoteId,setActiveNoteId,stickerMode,setStickerMode,selectedStickerId,setSelectedStickerId,rightDockOpen,setRightDockOpen,isMobile,mobileTab,setMobileTab}}>
       <StoreProvider>
         <ToastProvider>
           <TopBar/>
           <IcalAutoSync/>
-          <LeftPanel/>
-          <PanelToggle/>
-          <MainArea/>
-          <RightDock/>
+          {!isMobile&&<LeftPanel/>}
+          {!isMobile&&<PanelToggle/>}
+          {(isMobile&&mobileTab==='meetings')?<MobileMeetings/>:<MainArea/>}
+          {!isMobile&&<RightDock/>}
+          {isMobile&&<MobileBottomNav/>}
         </ToastProvider>
       </StoreProvider>
     </LayoutContext.Provider>
