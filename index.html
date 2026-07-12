@@ -2000,7 +2000,7 @@ function TopBar(){
   const[dragId,setDragId]=useState(null);
   const[dragOverId,setDragOverId]=useState(null);
   return(<>
-    <div style={{position:'fixed',top:0,left:0,right:0,height:_mob?48:56,borderBottom:'0.5px solid #E9E9EE',boxShadow:'0 1px 4px rgba(20,20,43,0.04)',zIndex:1000,
+    <div style={{position:'fixed',top:0,left:0,right:0,height:_mob?44:56,borderBottom:'0.5px solid #E9E9EE',boxShadow:'0 1px 4px rgba(20,20,43,0.04)',zIndex:1000,
       display:'flex',alignItems:'center',padding:_mob?'0 10px':'0 14px 0 16px',gap:_mob?5:8,
       backgroundImage:topBarImg?`url(${topBarImg})`:'none',backgroundSize:'cover',backgroundPosition:'center',
       backgroundColor:topBarBg||'#fff'}}>
@@ -4478,7 +4478,7 @@ function CalendarSection(){
 function MainArea(){
   const{leftWidth,leftCollapsed,isMobile:_m}=useLayout();
   return(
-    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginTop:_m?48:56,height:_m?'calc(100vh - 100px)':'calc(100vh - 56px)',display:'flex',flexDirection:'column',backgroundColor:'#FAFAFA',transition:'margin-left 0.2s ease',overflow:'auto'}}>
+    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginTop:_m?44:56,height:_m?'calc(100vh - 94px)':'calc(100vh - 56px)',display:'flex',flexDirection:'column',backgroundColor:'#FAFAFA',transition:'margin-left 0.2s ease',overflow:'auto'}}>
       {!_m&&<WeeklySection/>}
       {!_m&&<div style={{height:8,backgroundColor:'#F3F3F3',flexShrink:0,borderBottom:'0.5px solid #EBEBEB'}}/>}
       <CalendarSection/>
@@ -4527,49 +4527,136 @@ function RightDock(){
     </aside>
   );
 }
-function MobileBottomNav(){
-  const{mobileTab,setMobileTab}=useLayout();
-  return(
-    <nav style={{position:'fixed',bottom:0,left:0,right:0,height:52,backgroundColor:'#fff',
-      borderTop:'0.5px solid #E8E8EC',display:'flex',alignItems:'center',justifyContent:'space-around',zIndex:1100}}>
-      {[{id:'calendar',icon:'📅',label:'달력'},{id:'meetings',icon:'📋',label:'회의록'}].map(t=>(
-        <button key={t.id} onClick={()=>setMobileTab(t.id)}
-          style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'6px 0',
-            border:'none',backgroundColor:'transparent',cursor:'pointer',
-            color:mobileTab===t.id?'var(--acc)':'#AEAEB2',fontSize:10,fontWeight:mobileTab===t.id?600:400}}>
-          <span style={{fontSize:18}}>{t.icon}</span><span>{t.label}</span>
-        </button>
-      ))}
-    </nav>
-  );
+const SAT_TEAL='#4EB8B8';
+function MobileMonthly(){
+  const{state,dispatch}=useStore();
+  const cs=useDynCatStyle();
+  const[vm,setVm]=useState(()=>{const t=new Date();return{y:t.getFullYear(),m:t.getMonth()+1};});
+  const[selDate,setSelDate]=useState(()=>toDateKey(new Date()));
+  const[addOpen,setAddOpen]=useState(null);
+  const[detailEvt,setDetailEvt]=useState(null);
+  const today=toDateKey(new Date());
+  const{y,m}=vm;
+  const f=new Date(y,m-1,1).getDay(),ds=new Date(y,m,0).getDate(),pd=new Date(y,m-1,0).getDate();
+  const allEv=state.weeklyEvents||[];
+  const evFor=(dk)=>allEv.filter(e=>e.date===dk);
+  const p2=n=>String(n).padStart(2,'0');
+  const dk=(yy,mm,dd)=>yy+'-'+p2(mm)+'-'+p2(dd);
+  const catDot=(cat)=>(cs[cat]||{dot:'#ccc'}).dot;
+  const catLabel=(cat)=>cat==='work'?(state.workLabel||'업무'):cat==='personal'?(state.personalLabel||'개인'):cat==='outlook'?'아웃룩':'구글';
+  const cells=[];
+  for(let i=f-1;i>=0;i--)cells.push({d:pd-i,k:dk(y,m-1,pd-i),ot:true});
+  for(let d=1;d<=ds;d++){const k=dk(y,m,d),dw=new Date(y,m-1,d).getDay();cells.push({d,k,td:k===today,hl:!!getHoliday(k)||dw===0,sa:dw===6,sel:k===selDate});}
+  for(let d=1;d<=(7-(cells.length%7))%7;d++)cells.push({d,k:dk(y,m+1,d),ot:true});
+  const selEvts=evFor(selDate).sort((a,b)=>(a.time||'99').localeCompare(b.time||'99'));
+  const selD=new Date(selDate+'T12:00:00');const dowKr=['일','월','화','수','목','금','토'];
+  const shiftM=(dir)=>setVm(v=>{let nm=v.m+dir,ny=v.y;if(nm<1){nm=12;ny--;}if(nm>12){nm=1;ny++;}return{y:ny,m:nm};});
+  return(<div style={{paddingTop:44,paddingBottom:54,minHeight:'100vh',background:'#FAFAF7'}}>
+    <div style={{padding:'14px 16px 6px',display:'flex',alignItems:'baseline',gap:6}}>
+      <span style={{fontSize:20,fontWeight:800,letterSpacing:'-0.4px'}}>{m}월</span><span style={{fontSize:13,fontWeight:500,color:'#A8A8A4'}}>{y}</span><span style={{flex:1}}/>
+      <button onClick={()=>shiftM(-1)} style={{fontSize:13,color:'var(--acc)',fontWeight:600}}>‹</button>
+      <button onClick={()=>{setVm({y:new Date().getFullYear(),m:new Date().getMonth()+1});setSelDate(today);}} style={{fontSize:10,color:'var(--acc)',fontWeight:700,margin:'0 6px'}}>오늘</button>
+      <button onClick={()=>shiftM(1)} style={{fontSize:13,color:'var(--acc)',fontWeight:600}}>›</button>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',padding:'0 16px',marginBottom:2}}>
+      {['Su','Mo','Tu','We','Th','Fr','Sa'].map((d,i)=>(<span key={i} style={{textAlign:'center',fontSize:9,fontWeight:600,padding:'3px 0',letterSpacing:0.4,color:i===0?'#D06A6A':i===6?SAT_TEAL:'#B8B8B2'}}>{d}</span>))}
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',padding:'0 12px',rowGap:2}}>
+      {cells.map((c,i)=>{const dots=evFor(c.k).slice(0,4).map(e=>catDot(e.category));
+        return(<div key={i} onClick={()=>setSelDate(c.k)} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 0',minHeight:42,borderRadius:8,cursor:'pointer'}}>
+          <span style={{fontSize:13.5,fontWeight:600,width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',
+            color:c.ot?'#D5D5CE':c.td?'#fff':c.hl?'#D06A6A':c.sa?SAT_TEAL:'#2C2C2E',
+            background:c.td?'var(--acc)':c.sel&&!c.td?'rgba(183,156,122,0.12)':'transparent',fontSize:c.td?12.5:13.5}}>{c.d}</span>
+          <div style={{display:'flex',gap:2,marginTop:1,justifyContent:'center',minHeight:4}}>{dots.map((cl,j)=>(<span key={j} style={{width:4,height:4,borderRadius:'50%',background:cl}}/>))}</div>
+        </div>);})}
+    </div>
+    <div style={{padding:'14px 16px 6px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <span style={{fontSize:13,fontWeight:700}}>Events · {selD.getDate()} {dowKr[selD.getDay()]}{getHoliday(selDate)?' · '+getHoliday(selDate):''}</span>
+      <button onClick={()=>setAddOpen(selDate)} style={{fontSize:16,color:'var(--acc)',width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+    </div>
+    {selEvts.length===0&&<div style={{textAlign:'center',color:'#D0D0CA',fontSize:11.5,padding:'20px 0'}}>일정 없음</div>}
+    {selEvts.map(ev=>(<div key={ev.id} onClick={()=>setDetailEvt(ev)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 16px',cursor:'pointer'}}>
+      <div style={{width:3,height:28,borderRadius:1.5,flexShrink:0,background:catDot(ev.category)}}/>
+      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:'#2C2C2E',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{ev.title}</div>
+      <div style={{fontSize:11,color:'#B0B0AA',fontWeight:500}}>{catLabel(ev.category)}</div></div>
+      <span style={{fontSize:11,color:'#B0B0AA',flexShrink:0}}>{ev.time||'종일'}</span>
+    </div>))}
+    {addOpen&&<EventPopover date={addOpen} onClose={()=>setAddOpen(null)}/>}
+    {detailEvt&&<EventDetailPopover event={detailEvt} onClose={()=>setDetailEvt(null)}/>}
+  </div>);
+}
+function MobileWeekly(){
+  const{state}=useStore();const cs=useDynCatStyle();
+  const[wkOff,setWkOff]=useState(0);const[detailEvt,setDetailEvt]=useState(null);const[addDate,setAddDate]=useState(null);
+  const allEv=state.weeklyEvents||[];const today=toDateKey(new Date());
+  const base=getWeekStart(wkOff);const end=new Date(base);end.setDate(base.getDate()+6);
+  const catDot=(cat)=>(cs[cat]||{dot:'#ccc'}).dot;
+  const catLabel=(cat)=>cat==='work'?(state.workLabel||'업무'):cat==='personal'?(state.personalLabel||'개인'):cat==='outlook'?'아웃룩':'구글';
+  const dowEn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const days=[];for(let i=0;i<7;i++){const d=new Date(base);d.setDate(base.getDate()+i);const k=toDateKey(d);
+    days.push({d,k,evts:allEv.filter(e=>e.date===k).sort((a,b)=>(a.time||'99').localeCompare(b.time||'99')),td:k===today,hl:!!getHoliday(k)||d.getDay()===0,sa:d.getDay()===6});}
+  const scrollRef=useRef(null);
+  useEffect(()=>{const el=scrollRef.current?.querySelector('[data-td]');if(el)setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),80);},[wkOff]);
+  return(<div style={{paddingTop:44,paddingBottom:54,minHeight:'100vh',background:'#FAFAF7'}}>
+    <div style={{padding:'10px 16px 4px',display:'flex',alignItems:'baseline',gap:6}}>
+      <span style={{fontSize:16,fontWeight:800,letterSpacing:'-0.3px'}}>{base.getMonth()+1}/{base.getDate()} — {end.getMonth()+1}/{end.getDate()}</span>
+      <span style={{fontSize:12,fontWeight:500,color:'#A8A8A4'}}>{base.getFullYear()}</span><span style={{flex:1}}/>
+      <button onClick={()=>setWkOff(v=>v-1)} style={{fontSize:13,color:'var(--acc)',fontWeight:600}}>‹</button>
+      <button onClick={()=>setWkOff(0)} style={{fontSize:10,color:'var(--acc)',fontWeight:700,margin:'0 6px'}}>오늘</button>
+      <button onClick={()=>setWkOff(v=>v+1)} style={{fontSize:13,color:'var(--acc)',fontWeight:600}}>›</button>
+    </div>
+    <div ref={scrollRef}>{days.map(day=>(<div key={day.k} data-td={day.td?'1':undefined} style={{display:'flex',alignItems:'flex-start',padding:'0 0 0 16px',borderBottom:'0.5px solid #F0F0EA',minHeight:90}}>
+      <div style={{width:80,flexShrink:0,padding:'12px 0'}}>
+        <div style={{fontSize:12,fontWeight:700,letterSpacing:0.2,color:day.hl?'#D06A6A':day.sa?SAT_TEAL:'var(--acc)',marginBottom:'-2px'}}>{dowEn[day.d.getDay()]}</div>
+        <div style={{fontSize:52,fontWeight:900,letterSpacing:'-3px',lineHeight:0.95,color:day.td?'var(--acc)':day.hl?'#D06A6A':day.sa?SAT_TEAL:'#1A1A1C'}}>{String(day.d.getDate()).padStart(2,'0')}</div>
+      </div>
+      <div style={{flex:1,padding:'10px 14px 12px 8px',display:'flex',flexDirection:'column',gap:7}}>
+        {day.evts.length===0&&<div style={{fontSize:11,color:'#D4D4CE',padding:'14px 0',textAlign:'center'}}>일정 없음</div>}
+        {day.evts.map(ev=>{const c=catDot(ev.category);
+          return(<div key={ev.id} onClick={()=>setDetailEvt(ev)} style={{background:'#fff',borderRadius:10,overflow:'hidden',border:'0.5px solid #EDEDEA',display:'flex',cursor:'pointer'}}>
+            <div style={{width:3,flexShrink:0,background:c}}/>
+            <div style={{flex:1,padding:'10px 12px'}}>
+              <div style={{fontSize:8.5,fontWeight:700,letterSpacing:0.4,textTransform:'uppercase',color:c,marginBottom:2}}>{catLabel(ev.category)}</div>
+              <div style={{fontSize:13,fontWeight:700,color:'#1A1A1C',lineHeight:1.3}}>{ev.title}</div>
+              {ev.time?<div style={{fontSize:20,fontWeight:800,color:'#1A1A1C',letterSpacing:'-0.5px',marginTop:2}}>{ev.time}</div>
+              :<div style={{fontSize:11,color:'#B0B0AA',marginTop:2}}>종일</div>}
+            </div></div>);})}
+        <button onClick={()=>setAddDate(day.k)} style={{alignSelf:'flex-end',marginTop:'auto',width:26,height:26,borderRadius:'50%',background:'#F5F0E8',color:'var(--acc)',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+      </div>
+    </div>))}</div>
+    {addDate&&<EventPopover date={addDate} onClose={()=>setAddDate(null)}/>}
+    {detailEvt&&<EventDetailPopover event={detailEvt} onClose={()=>setDetailEvt(null)}/>}
+  </div>);
 }
 function MobileMeetings(){
-  const{state}=useStore();
-  const[modal,setModal]=React.useState(null);
-  const notes=React.useMemo(()=>{
-    const arr=Object.values(state.meetingNotes||{});
-    arr.sort((a,b)=>(b.date||'').localeCompare(a.date||''));return arr;
-  },[state.meetingNotes]);
-  return(
-    <div style={{marginTop:48,height:'calc(100vh - 100px)',overflow:'auto',backgroundColor:'#FAFAFA',padding:'12px 14px'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-        <span style={{fontSize:15,fontWeight:700,color:'#333'}}>📋 회의록</span>
-        <button onClick={()=>setModal({})} style={{fontSize:12,padding:'5px 14px',borderRadius:8,backgroundColor:'var(--acc)',color:'#fff',border:'none',cursor:'pointer'}}>+ 새 회의록</button>
-      </div>
-      {notes.length===0&&<div style={{textAlign:'center',color:'#B4B4BC',fontSize:13,padding:'40px 0'}}>회의록이 없습니다</div>}
-      {notes.map(note=>(
-        <div key={note.id} onClick={()=>setModal(note)} style={{padding:'12px 14px',backgroundColor:'#fff',borderRadius:10,border:'0.5px solid #ECECF0',marginBottom:8,cursor:'pointer'}}>
-          <div style={{fontSize:13,fontWeight:600,color:'#333'}}>{note.title||'(제목 없음)'}</div>
-          <div style={{fontSize:11,color:'#A0A0A8',marginTop:3}}>{note.date||''}{note.time?' '+note.time:''}</div>
-        </div>
-      ))}
-      {modal&&<MeetingNoteModal initialNote={modal} onClose={()=>setModal(null)}/>}
+  const{state}=useStore();const[modal,setModal]=useState(null);const dowKr=['일','월','화','수','목','금','토'];
+  const notes=useMemo(()=>{const a=Object.values(state.meetingNotes||{});a.sort((a,b)=>(b.date||'').localeCompare(a.date||''));return a;},[state.meetingNotes]);
+  const grouped=useMemo(()=>{const g={};notes.forEach(n=>{(g[n.date||'미정']=g[n.date||'미정']||[]).push(n);});return g;},[notes]);
+  return(<div style={{paddingTop:44,paddingBottom:54,minHeight:'100vh',background:'#FAFAF7'}}>
+    <div style={{padding:'14px 16px 8px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <b style={{fontSize:18,fontWeight:800}}>📋 회의록</b>
+      <button onClick={()=>setModal({})} style={{fontSize:11.5,padding:'6px 14px',borderRadius:8,background:'var(--acc)',color:'#fff',fontWeight:600}}>+ 새 회의록</button>
     </div>
-  );
+    {notes.length===0&&<div style={{textAlign:'center',color:'#D0D0CA',fontSize:12,padding:'40px 0'}}>회의록이 없습니다</div>}
+    {Object.keys(grouped).sort().reverse().map(d=>{const dd=new Date(d+'T12:00:00');
+      return(<React.Fragment key={d}><div style={{fontSize:11,fontWeight:700,color:'var(--acc)',padding:'12px 16px 4px'}}>{dd.getMonth()+1}/{dd.getDate()} {dowKr[dd.getDay()]}요일</div>
+        {grouped[d].map(n=>(<div key={n.id} onClick={()=>setModal(n)} style={{padding:'10px 16px',cursor:'pointer'}}>
+          <div style={{fontSize:13,fontWeight:600,color:'#2C2C2E'}}>{n.title||'(제목 없음)'}</div>
+          <div style={{fontSize:10.5,color:'#B0B0AA',marginTop:1}}>{n.time||'종일'}</div></div>))}</React.Fragment>);})}
+    {modal&&<MeetingNoteModal initialNote={modal} onClose={()=>setModal(null)}/>}
+  </div>);
+}
+function MobileBottomNav(){
+  const{mobileTab,setMobileTab}=useLayout();
+  return(<nav style={{position:'fixed',bottom:0,left:0,right:0,height:50,background:'rgba(250,250,247,0.97)',backdropFilter:'blur(10px)',WebkitBackdropFilter:'blur(10px)',borderTop:'0.5px solid #EAEAE6',display:'flex',alignItems:'center',justifyContent:'space-around',zIndex:1100}}>
+    {[{id:'month',icon:'📅',label:'먼슬리'},{id:'week',icon:'📆',label:'위클리'},{id:'meetings',icon:'📋',label:'회의록'}].map(t=>(
+      <button key={t.id} onClick={()=>setMobileTab(t.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1,minWidth:56,color:mobileTab===t.id?'var(--acc)':'#D0D0CA',fontSize:9,fontWeight:mobileTab===t.id?600:500,border:'none',background:'none',cursor:'pointer'}}>
+        <span style={{fontSize:18}}>{t.icon}</span><span>{t.label}</span></button>))}
+  </nav>);
 }
 function App(){
   const isMobile=useIsMobile();
-  const[mobileTab,setMobileTab]=React.useState('calendar');
+  const[mobileTab,setMobileTab]=React.useState('month');
   const[leftWidth,setLeftWidth]=React.useState(300);
   const[leftCollapsed,setLeftCollapsed]=React.useState(false);
   const[weeklyHeight,setWeeklyHeight]=React.useState(220);
@@ -4591,7 +4678,10 @@ function App(){
           <IcalAutoSync/>
           {!isMobile&&<LeftPanel/>}
           {!isMobile&&<PanelToggle/>}
-          {(isMobile&&mobileTab==='meetings')?<MobileMeetings/>:<MainArea/>}
+          {isMobile&&mobileTab==='month'&&<MobileMonthly/>}
+          {isMobile&&mobileTab==='week'&&<MobileWeekly/>}
+          {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
+          {!isMobile&&<MainArea/>}
           {!isMobile&&<RightDock/>}
           {isMobile&&<MobileBottomNav/>}
         </ToastProvider>
