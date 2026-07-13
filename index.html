@@ -13,8 +13,8 @@
 <link rel="apple-touch-icon" href="favicon-192.png">
   <style>
     :root{--acc:#B79C7A;
-    @media(max-width:767px){.desktop-only{display:none!important;}.mob-full{margin-left:0!important;}}--acc-strong:#8A7355;--acc-bg:#F5EFE6;--acc-soft:#FAF6F0;--acc-brd:#DECDB4;--acc-rgb:183,156,122;
-      --w-bg:#fff;--w-cell:#fff;--m-bg:#fff;--m-cell:#fff;--p-bg:#FCFCFD;--p-img:none;}
+    @media(max-width:767px){.desktop-only{display:none!important;}.mob-full{margin-left:0!important;}}--acc-strong:#8A7355;--acc-bg:#F5EFE6;--acc-soft:#FAF6F0;--acc-brd:#DECDB4;--ln:#EDEDEA;--ln2:#F5F5F2;--acc-rgb:183,156,122;
+      --w-bg:#FAFAF7;--w-cell:#fff;--m-bg:#FAFAF7;--m-cell:#fff;--p-bg:#FAFAF7;--p-img:none;}
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Pretendard Variable',Pretendard,'Noto Sans KR','Apple SD Gothic Neo',-apple-system,sans-serif;background:#fff;color:#1A1A1A;-webkit-font-smoothing:antialiased;letter-spacing:-0.01em;}
@@ -379,7 +379,8 @@ async function outlookSync(clientId){
     date:ev.start.dateTime?ev.start.dateTime.slice(0,10):ev.start.date,
     time:ev.start.dateTime?ev.start.dateTime.slice(11,16):undefined,
     title:(ev.subject||'(제목 없음)').normalize('NFC').trim(),
-    category:'outlook',isOutlook:true,projectId:null
+    category:'outlook',isOutlook:true,projectId:null,
+    location:ev.location&&ev.location.displayName?ev.location.displayName:undefined
   }));
 }
 async function outlookDisconnect(clientId){
@@ -2000,7 +2001,7 @@ function TopBar(){
   const[dragId,setDragId]=useState(null);
   const[dragOverId,setDragOverId]=useState(null);
   return(<>
-    <div style={{position:'fixed',top:0,left:0,right:0,height:_mob?44:56,borderBottom:'0.5px solid #E8E8E4',boxShadow:'0 1px 4px rgba(20,20,43,0.04)',zIndex:1000,
+    <div style={{position:'fixed',top:0,left:0,right:0,height:_mob?44:46,borderBottom:'0.5px solid #EDEDEA',boxShadow:'0 1px 4px rgba(20,20,43,0.04)',zIndex:1000,
       display:'flex',alignItems:'center',padding:_mob?'0 10px':'0 14px 0 16px',gap:_mob?5:8,
       backgroundImage:topBarImg?`url(${topBarImg})`:'none',backgroundSize:'cover',backgroundPosition:'center',
       backgroundColor:topBarBg||'#fff'}}>
@@ -2870,7 +2871,30 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
   const isTodo=block.type==='todo';
   const isHdr=block.type==='h1'||block.type==='h2'||block.type==='h3';
   const mark=isBullet?bulletMark(block.indent||0):isNum?numMark(bIdx):'';
-  const syncState=()=>{const el=divRef.current;if(el)updateBlock(block.id,{html:el.innerHTML,text:el.textContent||''});};
+  const syncState=()=>{const el=divRef.current;if(!el)return;
+    const raw=el.textContent||'';const htm=el.innerHTML;
+    // 자동 변환: [] → check 블록
+    if(raw.startsWith('[]')&&block.type!=='check'){updateBlock(block.id,{type:'check',checked:false,html:htm.replace(/^\[\]/,'').trim(),text:raw.slice(2).trim()});if(el)el.innerHTML=raw.slice(2).trim();return;}
+    // 자동 변환: "- " → bullet 블록
+    if(raw==='- '&&block.type==='p'){updateBlock(block.id,{type:'bullet',html:'',text:''});if(el)el.innerHTML='';return;}
+    updateBlock(block.id,{html:htm,text:raw});
+  };
+  if(block.type==='check'){
+    const checked=!!block.checked;
+    return(
+      <div style={{flex:1,display:'flex',alignItems:'flex-start',gap:8,padding:'2px 0',minWidth:0}} onMouseDown={()=>onFocusCb(block.id)}>
+        <input type="checkbox" checked={checked} onChange={()=>updateBlock(block.id,{checked:!checked})}
+          style={{marginTop:3,accentColor:'var(--acc)',cursor:'pointer',flexShrink:0}}/>
+        <div ref={divRef} contentEditable suppressContentEditableWarning
+          onInput={syncState} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();onEnterKey(block.id);}if(e.key==='Backspace'&&!(divRef.current?.textContent))onBackspaceKey(block.id,e);if(e.key==='Tab'){e.preventDefault();onTabKey(block.id,e.shiftKey);}}}
+          onPaste={e=>{const t=e.clipboardData.getData('text/plain');if(t.includes('\n')){e.preventDefault();onPasteLines(block.id,t.split('\n'));}}}
+          onFocus={()=>onFocusCb(block.id)} data-block-id={block.id}
+          style={{flex:1,minWidth:0,outline:'none',fontSize:13,color:checked?'#B8B8B2':'#333',
+            textDecoration:checked?'line-through':'none',fontFamily:'inherit'}}
+          dangerouslySetInnerHTML={{__html:block.html||''}}/>
+      </div>
+    );
+  }
   if(block.type==='table'){
     const rows=(block.rows&&block.rows.length)?block.rows:[['',''],['','']];
     const setRows=(r)=>updateBlock(block.id,{rows:r});
@@ -2884,7 +2908,7 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
               {rows.map((row,ri)=>(
                 <tr key={ri} className="tbl-row">
                   {row.map((cell,ci)=>(
-                    <td key={ci} style={{border:'0.5px solid #DCDCE2',padding:0,minWidth:64,backgroundColor:ri===0?'var(--acc-soft)':'#fff'}}>
+                    <td key={ci} style={{border:'0.5px solid #DCDCE2',padding:0,minWidth:48,backgroundColor:ri===0?'var(--acc-soft)':'#fff',position:'relative'}}>
                       <input value={cell} onChange={e=>setCell(ri,ci,e.target.value)}
                         placeholder={ri===0?'제목':''}
                         style={{width:'100%',border:'none',outline:'none',padding:'6px 9px',fontSize:12.5,
@@ -2924,6 +2948,7 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
         style={{marginRight:6,marginTop:4,width:14,height:14,flexShrink:0,cursor:'pointer',accentColor:'var(--acc)'}}/>}
       <div ref={el=>{divRef.current=el;refsMap.current[block.id]=el;}}
         className={'blk-edit'+(isHdr?' blk-h':'')}
+        style={{...(isTodo&&block.checked?{textDecoration:'line-through',opacity:0.5,color:'#999'}:{})}}
         contentEditable suppressContentEditableWarning
         data-placeholder={td.ph}
         onFocus={()=>{onFocusCb(block.id);editingRef.current=block.id;}}
@@ -3012,6 +3037,7 @@ function BlockEditor({blocks,onBlocksChange}){
     {id:'h3',label:'H3',fs:15,fw:600,ph:'제목 3'},{id:'p',label:'T',fs:13,fw:400,ph:'입력하거나 \'- \', \'1. \', \'# \'로 블록 전환...'},
     {id:'bullet',label:'•',fs:13,fw:400,ph:'항목'},{id:'numbered',label:'1.',fs:13,fw:400,ph:'항목'},
     {id:'todo',label:'☑',fs:13,fw:400,ph:'할 일'},
+    {id:'check',label:'☐',fs:13,fw:400,ph:'체크리스트'},
     {id:'table',label:'⊞',fs:13,fw:400,ph:''},
   ];
   const focusedBlock=blocks.find(b=>b.id===focusedId)||blocks[0];
@@ -3235,7 +3261,7 @@ function MeetingNoteModal({initialNote,onClose}){
     <div style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div style={{width:760,maxWidth:'96vw',maxHeight:'92vh',minWidth:520,minHeight:380,resize:'both',backgroundColor:'#fff',
-        borderRadius:16,overflow:'hidden',display:'flex',flexDirection:'column',
+        borderRadius:16,overflow:'auto',display:'flex',flexDirection:'column',
         boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',animation:'popIn 0.18s ease'}}>
         {/* Header */}
         <div style={{padding:'22px 28px 16px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0}}>
@@ -3452,7 +3478,7 @@ function LeftPanel(){
     document.addEventListener('mouseup',onUp);
   },[leftWidth,setLeftWidth]);
   return(
-    <aside style={{position:'fixed',top:56,left:0,width:leftCollapsed?0:leftWidth,height:'calc(100vh - 56px)',
+    <aside style={{position:'fixed',top:46,left:0,width:leftCollapsed?0:leftWidth,height:'calc(100vh - 46px)',
       borderRight:'0.5px solid #E7E7EC',backgroundColor:'var(--p-bg)',
       backgroundImage:'var(--p-img)',backgroundSize:'cover',backgroundPosition:'center',zIndex:100,
       boxSizing:'border-box',display:'flex',flexDirection:'column',overflow:'hidden',
@@ -3830,8 +3856,8 @@ function EventChip({event,onClick}){
   const catStyle=useDynCatStyle();const cs=catStyle[event.category]||catStyle.work;
   const{state}=useStore();const bdayPfx=getBdayPrefix(event.category,state);
   const isBday=bdayPfx!=='';
-  const chipStyle=isBday?{backgroundColor:'transparent',borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0}:{backgroundColor:'#fff',boxShadow:'inset 2.5px 0 0 '+(cs.dot||cs.text),borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0};
-  return<div onClick={onClick} style={{display:'flex',alignItems:'flex-start',gap:3,padding:'2px 5px 2px 8px',...chipStyle}}>{event.time&&<span style={{opacity:0.7,flexShrink:0,fontSize:10.5,fontVariantNumeric:'tabular-nums'}}>{event.time}</span>}<span style={{flex:1,minWidth:0,whiteSpace:'normal',wordBreak:'break-all',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{bdayPfx}{event.title}</span>{event.isOutlook&&<span style={{flexShrink:0}}>🔗</span>}</div>;
+  const chipStyle=isBday?{backgroundColor:'transparent',borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0}:{backgroundColor:'#fff',boxShadow:'inset 3px 0 0 '+(cs.dot||cs.text),borderRadius:6,border:'0.5px solid #EDEDEA',marginBottom:2,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0};
+  return<div onClick={onClick} style={{display:'flex',alignItems:'flex-start',gap:3,padding:'2px 5px 2px 8px',...chipStyle}}>{event.time&&<span style={{opacity:0.7,flexShrink:0,fontSize:10.5,fontVariantNumeric:'tabular-nums'}}>{event.time}</span>}<span style={{flex:1,minWidth:0,whiteSpace:'normal',wordBreak:'break-all',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{bdayPfx}{event.title}</span>{event.isOutlook&&<span style={{flexShrink:0}}>🔗</span>}{event.location&&<span style={{fontSize:9,color:'#B0B0AA',flexShrink:0,marginLeft:2}}>📍{event.location}</span>}</div>;
 }
 function TodoItem({todo,onToggle,onDelete}){
   const[hovered,setHovered]=useState(false);const catStyle=useDynCatStyle();const cs=catStyle[todo.category]||catStyle.work;
@@ -4048,7 +4074,7 @@ function CalendarDateCell({date,holiday,events,isInDragRange,onMouseDown,onMouse
   return(
     <div className="cal-cell" onMouseDown={onMouseDown} onMouseEnter={onMouseEnter} onMouseUp={onMouseUp}
       onDoubleClick={onDoubleClick}
-      style={{minHeight:162,minWidth:0,overflow:'hidden',padding:'5px 7px 5px',backgroundColor:cellBg||'#FAFAF7',
+      style={{minHeight:162,minWidth:0,overflow:'hidden',padding:'5px 7px 5px',backgroundColor:cellBg||'#fff',
         borderRight:cellBorder,borderBottom:cellBorder,cursor:'pointer',userSelect:'none',
         display:'flex',flexDirection:'column',gap:1}}>
       {/* Date number */}
@@ -4477,11 +4503,24 @@ function CalendarSection(){
 // ─── MAIN AREA ───────────────────────────────
 function MainArea(){
   const{leftWidth,leftCollapsed,isMobile:_m}=useLayout();
+  const[centerTab,setCenterTab]=useState('monthly');
   return(
-    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginTop:_m?44:56,height:_m?'calc(100vh - 94px)':'calc(100vh - 56px)',display:'flex',flexDirection:'column',backgroundColor:'#FAFAF7',transition:'margin-left 0.2s ease',overflow:'auto'}}>
-      {!_m&&<WeeklySection/>}
-      {!_m&&<div style={{height:8,backgroundColor:'#F5F5F2',flexShrink:0,borderBottom:'0.5px solid #EDEDEA'}}/>}
-      <CalendarSection/>
+    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginRight:_m?0:280,marginTop:_m?44:46,
+      height:_m?'calc(100vh - 94px)':'calc(100vh - 46px)',display:'flex',flexDirection:'column',
+      backgroundColor:'#FAFAF7',transition:'margin-left 0.2s ease,margin-right 0.2s ease',overflow:'hidden'}}>
+      {!_m&&<div style={{height:36,display:'flex',alignItems:'center',padding:'0 14px',gap:6,
+        borderBottom:'0.5px solid #EDEDEA',background:'#fff',flexShrink:0}}>
+        <span style={{fontSize:14,fontWeight:800,letterSpacing:'-0.3px'}}>7월</span>
+        <span style={{fontSize:10,color:'#A8A8A4'}}>2026</span>
+        <span style={{flex:1}}/>
+        <button onClick={()=>setCenterTab('monthly')} style={{padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,
+          color:centerTab==='monthly'?'var(--acc)':'#B0B0AA',background:centerTab==='monthly'?'var(--acc-bg)':'transparent'}}>월간</button>
+        <button onClick={()=>setCenterTab('weekly')} style={{padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,
+          color:centerTab==='weekly'?'var(--acc)':'#B0B0AA',background:centerTab==='weekly'?'var(--acc-bg)':'transparent'}}>주간</button>
+      </div>}
+      {(!_m&&centerTab==='weekly')&&<WeeklySection/>}
+      {(!_m&&centerTab==='weekly')&&<div style={{height:8,backgroundColor:'#F5F5F2',flexShrink:0,borderBottom:'0.5px solid #EDEDEA'}}/>}
+      {(_m||centerTab==='monthly')&&<CalendarSection/>}
     </main>
   );
 }
@@ -4498,6 +4537,41 @@ function PanelToggle(){
         boxShadow:'2px 0 6px rgba(var(--acc-rgb),0.12)'}}>
       {leftCollapsed?'›':'‹'}
     </button>
+  );
+}
+function RightNotesPanel(){
+  const{state}=useStore();
+  const[rtab,setRtab]=useState('notes');
+  const[modal,setModal]=useState(null);
+  const dowKr=['일','월','화','수','목','금','토'];
+  const notes=useMemo(()=>{const a=Object.values(state.meetingNotes||{});a.sort((a,b)=>(b.date||'').localeCompare(a.date||''));return a;},[state.meetingNotes]);
+  const grouped=useMemo(()=>{const g={};notes.forEach(n=>{(g[n.date||'미정']=g[n.date||'미정']||[]).push(n);});return g;},[notes]);
+  return(
+    <aside style={{position:'fixed',top:46,right:0,width:280,height:'calc(100vh - 46px)',background:'#fff',
+      borderLeft:'0.5px solid #EDEDEA',display:'flex',flexDirection:'column',zIndex:50}}>
+      <div style={{height:36,display:'flex',alignItems:'center',padding:'0 12px',gap:6,borderBottom:'0.5px solid #EDEDEA',flexShrink:0}}>
+        <span style={{fontSize:12,fontWeight:700,flex:1}}>📋 노트</span>
+        <button onClick={()=>setModal({})} style={{fontSize:10,color:'var(--acc)',fontWeight:600,padding:'3px 8px',borderRadius:6,background:'var(--acc-bg)'}}>+ 새 회의록</button>
+      </div>
+      <div style={{display:'flex',borderBottom:'0.5px solid #EDEDEA',flexShrink:0}}>
+        {[{id:'notes',label:'회의록'},{id:'memo',label:'메모'},{id:'todo',label:'체크리스트'}].map(t=>(
+          <button key={t.id} onClick={()=>setRtab(t.id)} style={{flex:1,textAlign:'center',padding:'6px 0',fontSize:10,fontWeight:600,
+            color:rtab===t.id?'var(--acc)':'#B4B4AE',borderBottom:rtab===t.id?'2px solid var(--acc)':'2px solid transparent',cursor:'pointer'}}>{t.label}</button>
+        ))}
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'8px 12px'}}>
+        {rtab==='notes'&&<>{notes.length===0&&<div style={{textAlign:'center',color:'#D0D0CA',fontSize:11,padding:20}}>회의록이 없습니다</div>}
+          {Object.keys(grouped).sort().reverse().map(d=>{const dd=new Date(d+'T12:00:00');
+            return(<React.Fragment key={d}><div style={{fontSize:10,fontWeight:700,color:'var(--acc)',padding:'10px 0 4px'}}>{dd.getMonth()+1}/{dd.getDate()} {dowKr[dd.getDay()]}요일</div>
+              {grouped[d].map(note=>(<div key={note.id} onClick={()=>setModal(note)} style={{padding:'8px 10px',borderRadius:8,border:'0.5px solid #EDEDEA',marginBottom:5,cursor:'pointer'}}>
+                <div style={{fontSize:11.5,fontWeight:600,color:'#2C2C2E'}}>{note.title||'(제목 없음)'}</div>
+                <div style={{fontSize:9.5,color:'#B0B0AA',marginTop:2}}>{note.time||'종일'}</div>
+              </div>))}</React.Fragment>);})}</>}
+        {rtab==='memo'&&<div style={{fontSize:11,color:'#999',textAlign:'center',padding:20}}>메모 기능 (구현 예정)</div>}
+        {rtab==='todo'&&<div style={{fontSize:11,color:'#999',textAlign:'center',padding:20}}>체크리스트 기능 (구현 예정)</div>}
+      </div>
+      {modal&&<MeetingNoteModal initialNote={modal} onClose={()=>setModal(null)}/>}
+    </aside>
   );
 }
 function RightDock(){
@@ -4657,7 +4731,7 @@ function MobileBottomNav(){
 function App(){
   const isMobile=useIsMobile();
   const[mobileTab,setMobileTab]=React.useState('month');
-  const[leftWidth,setLeftWidth]=React.useState(300);
+  const[leftWidth,setLeftWidth]=React.useState(220);
   const[leftCollapsed,setLeftCollapsed]=React.useState(false);
   const[weeklyHeight,setWeeklyHeight]=React.useState(220);
   const[freeNotePanelHeight,setFreeNotePanelHeight]=React.useState(200);
@@ -4677,12 +4751,11 @@ function App(){
           <TopBar/>
           <IcalAutoSync/>
           {!isMobile&&<LeftPanel/>}
-          {!isMobile&&<PanelToggle/>}
           {isMobile&&mobileTab==='month'&&<MobileMonthly/>}
           {isMobile&&mobileTab==='week'&&<MobileWeekly/>}
           {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
           {!isMobile&&<MainArea/>}
-          {!isMobile&&<RightDock/>}
+          {!isMobile&&<RightNotesPanel/>}
           {isMobile&&<MobileBottomNav/>}
         </ToastProvider>
       </StoreProvider>
