@@ -250,6 +250,7 @@ function reducer(state,action){
     case 'DELETE_EVENT':return{...state,weeklyEvents:state.weeklyEvents.filter(e=>e.id!==action.id)};
     case 'ADD_TODO':return{...state,todos:[...state.todos,{id:uid(),date:action.date,text:action.text,done:false,category:action.category||'work'}]};
     case 'TOGGLE_TODO':return{...state,todos:state.todos.map(t=>t.id===action.id?{...t,done:!t.done}:t)};
+    case 'UPDATE_TODO':return{...state,todos:state.todos.map(t=>t.id===action.id?{...t,...action.updates}:t)};
     case 'DELETE_TODO':return{...state,todos:state.todos.filter(t=>t.id!==action.id)};
     case 'BULK_MOVE_TODOS':return{...state,todos:state.todos.map(t=>(!t.done&&action.fromDates.includes(t.date))?{...t,date:action.toDate}:t)};
     case 'MIGRATE_LAYER_NAME':return{...state,customLayers:(state.customLayers||[]).map(l=>l.name===action.from?{...l,name:action.to}:l)};
@@ -2893,6 +2894,7 @@ const _mdLineParse=(line)=>{let m;
 const _escHtml=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onTabKey,onArrowNav,onPasteLines,onFocusCb,editingRef,checkSel,TYPES,bulletMark,numMark}){
   const divRef=React.useRef(null);
+  const tblRef=React.useRef(null);
   React.useEffect(()=>{
     if(divRef.current){divRef.current.innerHTML=block.html||'';}
     refsMap.current[block.id]=divRef.current;
@@ -2935,7 +2937,6 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
     const tbtn={fontSize:10.5,color:'#909098',padding:'2px 8px',borderRadius:5,border:'0.5px solid #E4E4E8',backgroundColor:'#FAFAFB',cursor:'pointer'};
     const ncols=rows[0].length;
     const colWidths=(block.colWidths&&block.colWidths.length===ncols)?block.colWidths:null;
-    const tblRef=React.useRef(null);
     const startColResize=(ci,e)=>{
       e.preventDefault();e.stopPropagation();
       let widths=colWidths?colWidths.slice():null;
@@ -3955,9 +3956,10 @@ function EventChip({event,onClick}){
   const chipStyle=isBday?{backgroundColor:'transparent',borderRadius:4,marginBottom:1.5,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0}:{backgroundColor:'#fff',boxShadow:'inset 3px 0 0 '+(cs.dot||cs.text),borderRadius:6,border:'0.5px solid #EDEDEA',marginBottom:2,fontSize:11.5,fontWeight:500,color:cs.text,lineHeight:1.45,overflow:'hidden',cursor:'pointer',maxWidth:'100%',minWidth:0};
   return<div onClick={onClick} style={{display:'flex',alignItems:'flex-start',gap:3,padding:'2px 5px 2px 8px',...chipStyle}}>{event.time&&<span style={{opacity:0.7,flexShrink:0,fontSize:10.5,fontVariantNumeric:'tabular-nums'}}>{event.time}</span>}<span style={{flex:1,minWidth:0,whiteSpace:'normal',wordBreak:'break-all',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{bdayPfx}{event.title}</span>{event.isOutlook&&<span style={{flexShrink:0}}>🔗</span>}{event.location&&<span style={{fontSize:9,color:'#B0B0AA',flexShrink:0,marginLeft:2}}>📍{event.location}</span>}</div>;
 }
-function TodoItem({todo,onToggle,onDelete}){
-  const[hovered,setHovered]=useState(false);const catStyle=useDynCatStyle();const cs=catStyle[todo.category]||catStyle.work;
-  return<div style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}} onClick={e=>e.stopPropagation()} onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}><button onClick={onToggle} style={{width:10,height:10,borderRadius:2,flexShrink:0,border:`0.5px solid ${todo.done?'#D0D0D0':cs.border}`,backgroundColor:todo.done?'#F0F0F0':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:7,color:'#A2A2AA',transition:'all 0.1s'}}>{todo.done?'✓':''}</button><span style={{width:5,height:5,borderRadius:'50%',flexShrink:0,backgroundColor:todo.done?'#D0D0D0':cs.dot}}/><span style={{fontSize:13,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:todo.done?'#C8C8C8':'#444',textDecoration:todo.done?'line-through':'none'}}>{todo.text}</span>{hovered&&<button onClick={onDelete} style={{fontSize:11,color:'#E0E0E0',flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#E0E0E0'}>×</button>}</div>;
+function TodoItem({todo,onToggle,onDelete,onEdit}){
+  const[hovered,setHovered]=useState(false);const[editing,setEditing]=useState(false);const[val,setVal]=useState(todo.text);const catStyle=useDynCatStyle();const cs=catStyle[todo.category]||catStyle.work;
+  const save=()=>{const t=val.trim();if(t&&onEdit)onEdit(t);else setVal(todo.text);setEditing(false);};
+  return<div style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}} onClick={e=>e.stopPropagation()} onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}><button onClick={onToggle} style={{width:10,height:10,borderRadius:2,flexShrink:0,border:`0.5px solid ${todo.done?'#D0D0D0':cs.border}`,backgroundColor:todo.done?'#F0F0F0':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:7,color:'#A2A2AA',transition:'all 0.1s'}}>{todo.done?'✓':''}</button><span style={{width:5,height:5,borderRadius:'50%',flexShrink:0,backgroundColor:todo.done?'#D0D0D0':cs.dot}}/>{editing?<input autoFocus value={val} onChange={e=>setVal(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter')save();if(e.key==='Escape'){setVal(todo.text);setEditing(false);}}} style={{flex:1,fontSize:13,color:'#333',minWidth:0,borderBottom:'0.5px solid #E8E8E8'}}/>:<span onDoubleClick={()=>{setVal(todo.text);setEditing(true);}} title="더블클릭 → 수정" style={{fontSize:13,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:todo.done?'#C8C8C8':'#444',textDecoration:todo.done?'line-through':'none',cursor:'text'}}>{todo.text}</span>}{hovered&&!editing&&<button onClick={onDelete} style={{fontSize:11,color:'#E0E0E0',flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#E0E0E0'}>×</button>}</div>;
 }
 function MemoEditor({memoKey,value,onUpdate}){
   const ref=useRef(null);
@@ -4138,7 +4140,7 @@ function WeeklyDayRow({date}){
         {/* 할일 + 메모 */}
         <div style={{borderTop:'0.5px dashed #EAEAE6',paddingTop:6,display:'flex',flexDirection:'column',gap:3}}>
           <div onClick={()=>{if(!todoActive){setTodoActive(true);setTimeout(()=>todoRef.current?.focus(),20);}}} style={{cursor:todoActive?'default':'text'}}>
-            {todos.map(t=><TodoItem key={t.id} todo={t} onToggle={()=>dispatch({type:'TOGGLE_TODO',id:t.id})} onDelete={()=>dispatch({type:'DELETE_TODO',id:t.id})}/>)}
+            {todos.map(t=><TodoItem key={t.id} todo={t} onToggle={()=>dispatch({type:'TOGGLE_TODO',id:t.id})} onDelete={()=>dispatch({type:'DELETE_TODO',id:t.id})} onEdit={txt=>dispatch({type:'UPDATE_TODO',id:t.id,updates:{text:txt}})}/>)}
             {todoActive?(
               <div style={{display:'flex',alignItems:'center',gap:4,marginTop:todos.length?2:0}} onClick={e=>e.stopPropagation()}>
                 <button onClick={()=>setTodoCat(c=>c==='work'?'personal':'work')} style={{fontSize:8,padding:'1px 4px',borderRadius:3,flexShrink:0,border:`0.5px solid ${todoCat==='work'?catStyle.work.border:catStyle.personal.border}`,backgroundColor:todoCat==='work'?catStyle.work.bg:catStyle.personal.bg,color:todoCat==='work'?catStyle.work.text:catStyle.personal.text}}>{todoCat==='work'?(state.workLabel||'업무').slice(0,2):(state.personalLabel||'개인').slice(0,2)}</button>
@@ -4622,7 +4624,7 @@ function CalendarSection(){
           return true;
         });
         return(
-          <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',position:'relative',borderLeft:'0.5px solid #EBEBEB',overflow:'hidden'}}>
+          <div ref={calendarScrollRef} style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',position:'relative',borderLeft:'0.5px solid #EBEBEB',overflow:'hidden'}}>
             {weeks.map((weekDates,i)=>(
               <CalendarWeekRow key={i} fill dimMonth={navMonth}
                 weekDates={weekDates}
