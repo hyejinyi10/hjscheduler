@@ -768,6 +768,26 @@ function StoreProvider({children}){
     historyRef.current=[...historyRef.current.slice(-49),stateRef.current];
     rawDispatch(action);
   },[rawDispatch]);
+  const undo=useCallback(()=>{
+    const h=historyRef.current;
+    if(!h.length)return false;
+    const prev=h[h.length-1];
+    historyRef.current=h.slice(0,-1);
+    rawDispatch({type:'RESTORE_STATE',state:prev});
+    return true;
+  },[rawDispatch]);
+  useEffect(()=>{
+    const onKey=(e)=>{
+      if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){
+        const t=e.target;const tag=t&&t.tagName;
+        const editable=t&&(tag==='INPUT'||tag==='TEXTAREA'||t.isContentEditable);
+        if(editable)return; // 입력 중엔 네이티브 실행취소
+        if(historyRef.current.length){e.preventDefault();undo();}
+      }
+    };
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[undo]);
   // Auto-snapshot: 시작 1초 후 1회 + 이후 1시간 간격 (앱을 켜둔 상태에서도 동작)
   useEffect(()=>{
     const t=setTimeout(()=>autoSnapshot(stateRef.current),1000);
@@ -2898,7 +2918,12 @@ function TblCell({value,onChange,header,minH}){
   const ref=useRef(null);
   const fit=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=Math.max(minH||0,el.scrollHeight)+'px';}};
   useEffect(fit,[value,minH]);
-  return <textarea ref={ref} value={value} onChange={e=>onChange(e.target.value)} onInput={fit}
+  const tblMd=(v)=>v.split('\n').map(line=>{let m;
+    if((m=line.match(/^(\s*)\[x\]\s(.*)$/i)))return m[1]+'☑ '+m[2];
+    if((m=line.match(/^(\s*)\[\]\s(.*)$/)))return m[1]+'☐ '+m[2];
+    if((m=line.match(/^(\s*)[-*]\s(.*)$/)))return m[1]+'• '+m[2];
+    return line;}).join('\n');
+  return <textarea ref={ref} value={value} onChange={e=>onChange(tblMd(e.target.value))} onInput={fit}
     placeholder={header?'제목':''} rows={1}
     style={{width:'100%',border:'none',outline:'none',padding:'6px 9px',fontSize:12.5,fontWeight:header?600:400,
       color:'#333',backgroundColor:'transparent',boxSizing:'border-box',fontFamily:'inherit',resize:'none',
@@ -3210,7 +3235,9 @@ function BlockEditor({blocks,onBlocksChange}){
       <div style={{display:'flex',gap:2,marginBottom:10,padding:'4px 6px',backgroundColor:'#F7F7F9',borderRadius:8,flexWrap:'wrap',alignItems:'center',position:'sticky',top:0,zIndex:10}}>
         {TYPES.map(t=>(
           <button key={t.id}
-            onMouseDown={e=>{e.preventDefault();const id=focusedId||(blocks[0]?.id);if(id){const cur=blocks.find(b=>b.id===id);const nt=cur?.type===t.id?'p':t.id;const upd={type:nt};if(nt==='table'&&!(cur&&cur.rows&&cur.rows.length))upd.rows=[['','',''],['','','']];updateBlock(id,upd);}}}
+            onMouseDown={e=>{e.preventDefault();const id=focusedId||(blocks[0]?.id);if(!id)return;const cur=blocks.find(b=>b.id===id);
+              if(cur&&cur.type==='table'&&t.id!=='table'){const nb={id:uid(),type:t.id,text:'',html:'',indent:0,checked:false};const idx=blocks.findIndex(b=>b.id===id);const arr=blocks.slice();arr.splice(idx+1,0,nb);onBlocksChange(arr);focusBlock(nb.id,'start');return;}
+              const nt=cur?.type===t.id?'p':t.id;const upd={type:nt};if(nt==='table'&&!(cur&&cur.rows&&cur.rows.length))upd.rows=[['','',''],['','','']];updateBlock(id,upd);}}
             title={{h1:'제목 1',h2:'제목 2',h3:'제목 3',p:'텍스트',bullet:'글머리 기호',numbered:'번호 매기기',todo:'할 일',table:'표 (2행 3열로 시작)'}[t.id]}
             style={{padding:'3px 9px',borderRadius:6,fontSize:11,fontWeight:600,
               border:`0.5px solid ${activeType.id===t.id?'var(--acc-brd)':'transparent'}`,
@@ -4079,7 +4106,7 @@ function WeeklyGrid({weekOffset,colH}){
 function WeeklyHeader({weekDates,onPrev,onNext,onToday}){
   const s=weekDates[0],e=weekDates[6];const fmt=d=>`${d.getMonth()+1}/${d.getDate()}`;
   return(
-    <div style={{height:38,display:'flex',alignItems:'center',padding:'0 14px',gap:6,backgroundColor:'#fff',borderBottom:'0.5px solid #EDEDEA'}}>
+    <div style={{height:38,display:'flex',alignItems:'center',padding:'0 14px',gap:6,backgroundColor:'#FAFAF7',borderBottom:'0.5px solid #EDEDEA'}}>
       <ViewTabs/>
       <span style={{width:2}}/>
       <div style={{display:'flex',alignItems:'center',gap:1}}>
@@ -4184,16 +4211,28 @@ function WeeklyDayRow({date}){
 }
 function WeeklySection(){
   const{state,dispatch}=useStore();
+  const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,calendarScrollRef,isMobile}=useLayout();
   const weekDates=getWeekDates(state.weekOffset);
   return(
-    <section style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,backgroundColor:'#fff'}}>
+    <section style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,backgroundColor:'#FAFAF7',position:'relative'}}>
       <WeeklyHeader weekDates={weekDates}
         onPrev={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset-1})}
         onNext={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset+1})}
         onToday={()=>dispatch({type:'SET_WEEK_OFFSET',payload:0})}/>
-      <div style={{flex:1,overflowY:'auto'}}>
+      <div ref={calendarScrollRef} style={{flex:1,overflowY:'auto',position:'relative'}}>
         {weekDates.map(d=><WeeklyDayRow key={toDateKey(d)} date={d}/>)}
+        <StickyNotesCanvas/>
+        <StickerCanvas/>
       </div>
+      {!isMobile&&<button data-fab="true" onClick={()=>{setFreeLayerVisible(true);setStickerMode(true);setRightDockOpen(true);}}
+        title="포스트잇·스티커 추가"
+        style={{position:'fixed',right:26,bottom:26,width:48,height:48,borderRadius:'50%',
+          backgroundColor:'var(--acc)',color:'#fff',fontSize:26,fontWeight:300,lineHeight:1,zIndex:940,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          boxShadow:'0 4px 14px rgba(var(--acc-rgb),0.38), 0 1px 3px rgba(15,15,35,0.12)',
+          transition:'transform 0.15s,background-color 0.15s'}}
+        onMouseEnter={e=>{e.currentTarget.style.backgroundColor='#463DA3';e.currentTarget.style.transform='scale(1.06)';}}
+        onMouseLeave={e=>{e.currentTarget.style.backgroundColor='var(--acc)';e.currentTarget.style.transform='scale(1)';}}>+</button>}
     </section>
   );
 }
@@ -4600,7 +4639,7 @@ function CalendarSection(){
   return(
     <section style={{display:'flex',flexDirection:'column',flex:1,minHeight:0}}>
       {/* Header (v3 single row) */}
-      <div style={{flexShrink:0,backgroundColor:'#fff',borderBottom:'0.5px solid #EDEDEA',zIndex:10}}>
+      <div style={{flexShrink:0,backgroundColor:'#FAFAF7',borderBottom:'0.5px solid #EDEDEA',zIndex:10}}>
         <div style={{height:38,display:'flex',alignItems:'center',padding:'0 14px',gap:6}}>
           <ViewTabs/>
           <span style={{width:2}}/>
@@ -4618,7 +4657,7 @@ function CalendarSection(){
           <button onClick={goToday} style={{fontSize:11,color:'var(--acc)',fontWeight:600,padding:'4px 12px',backgroundColor:'var(--acc-bg)',borderRadius:6,flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.backgroundColor='var(--acc-soft)'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='var(--acc-bg)'}>오늘로</button>
         </div>
         {/* Day names (Sunday-first, v3) */}
-        {!yearView&&<div style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',backgroundColor:'#fff',borderTop:'0.5px solid #EFEFF3'}}>
+        {!yearView&&<div style={{display:'grid',gridTemplateColumns:'repeat(7,minmax(0,1fr))',backgroundColor:'#FAFAF7',borderTop:'0.5px solid #EFEFF3'}}>
           {['일','월','화','수','목','금','토'].map((d,i)=><div key={d} style={{textAlign:'center',padding:'4px 0',fontSize:9,color:i===0?'#D06A6A':i===6?'#4EB8B8':'#C0C0BC',fontWeight:600,letterSpacing:'0.3px'}}>{d}</div>)}
         </div>}
       </div>
@@ -4719,7 +4758,7 @@ function PanelToggle(){
 function RightNotesPanel(){
   const[modal,setModal]=useState(null);
   return(
-    <aside style={{position:'fixed',top:46,right:0,width:300,height:'calc(100vh - 46px)',background:'#fff',
+    <aside style={{position:'fixed',top:46,right:0,width:300,height:'calc(100vh - 46px)',background:'#FAFAF7',
       borderLeft:'0.5px solid #EDEDEA',display:'flex',flexDirection:'column',zIndex:50}}>
       <div style={{height:36,display:'flex',alignItems:'center',padding:'0 14px',gap:6,borderBottom:'0.5px solid #EDEDEA',flexShrink:0}}>
         <span style={{fontSize:12,fontWeight:700,flex:1}}>📋 회의록</span>
@@ -4916,6 +4955,7 @@ function App(){
           {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
           {!isMobile&&<MainArea/>}
           {!isMobile&&<RightNotesPanel/>}
+          {!isMobile&&<RightDock/>}
           {isMobile&&<MobileBottomNav/>}
         </ToastProvider>
       </StoreProvider>
