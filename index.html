@@ -3375,7 +3375,7 @@ function BlockEditor({blocks,onBlocksChange}){
     </div>
   );
 }
-function MeetingNoteModal({initialNote,onClose}){
+function MeetingNoteModal({initialNote,onClose,inline=false}){
   const{state,dispatch}=useStore();
   const isNew=!initialNote?.id||!state.meetingNotes?.find(n=>n.id===initialNote.id);
   const today=new Date().toISOString().split('T')[0];
@@ -3431,17 +3431,13 @@ function MeetingNoteModal({initialNote,onClose}){
     window.addEventListener('keydown',h);
     return()=>window.removeEventListener('keydown',h);
   });
-  return(
-    <div style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}
-      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{width:760,maxWidth:'96vw',maxHeight:'92vh',minWidth:520,minHeight:380,resize:'both',backgroundColor:'#fff',
-        borderRadius:16,overflow:'auto',display:'flex',flexDirection:'column',
-        boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',animation:'popIn 0.18s ease'}}>
+  const body=(
+    <React.Fragment>
         {/* Header */}
-        <div style={{padding:'22px 28px 16px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0}}>
+        <div style={{padding:inline?'16px 18px 12px':'22px 28px 16px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0}}>
           <input autoFocus={isNew} value={note.title} onChange={e=>setNote(n=>({...n,title:e.target.value}))}
             placeholder="회의 제목"
-            style={{fontSize:26,fontWeight:700,color:'#111',width:'100%',
+            style={{fontSize:inline?19:26,fontWeight:700,color:'#111',width:'100%',
               marginBottom:14,borderBottom:'2px solid transparent',paddingBottom:2,fontFamily:'inherit'}}
             onFocus={e=>e.currentTarget.style.borderBottomColor='var(--acc-brd)'}
             onBlur={e=>e.currentTarget.style.borderBottomColor='transparent'}/>
@@ -3513,11 +3509,11 @@ function MeetingNoteModal({initialNote,onClose}){
           )}
         </div>
         {/* Content */}
-        <div style={{flex:1,overflow:'auto',padding:'18px 28px 10px'}}>
+        <div style={{flex:1,overflow:'auto',padding:inline?'14px 18px 10px':'18px 28px 10px'}}>
           <BlockEditor blocks={note.blocks} onBlocksChange={blocks=>setNote(n=>({...n,blocks}))}/>
         </div>
         {/* Footer */}
-        <div style={{padding:'12px 28px',borderTop:'0.5px solid #F0F0F0',display:'flex',
+        <div style={{padding:inline?'10px 18px':'12px 28px',borderTop:'0.5px solid #F0F0F0',display:'flex',
           justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
           <div style={{display:'flex',gap:6}}>
             {!isNew&&<button onClick={del} style={{fontSize:12,color:'#E24B4A',padding:'6px 14px',
@@ -3525,13 +3521,29 @@ function MeetingNoteModal({initialNote,onClose}){
           </div>
           <div style={{display:'flex',gap:8}}>
             <button onClick={onClose} style={{fontSize:13,color:'#888',padding:'6px 16px',
-              border:'0.5px solid #E0E0E0',borderRadius:6,cursor:'pointer'}}>닫기</button>
+              border:'0.5px solid #E0E0E0',borderRadius:6,cursor:'pointer'}}>{inline?'← 목록':'닫기'}</button>
             <button onClick={save} title="Ctrl+S" style={{fontSize:13,color:'#fff',padding:'6px 18px',
               backgroundColor:'var(--acc)',borderRadius:6,fontWeight:500,cursor:'pointer'}}
               onMouseEnter={e=>e.currentTarget.style.backgroundColor='#463DA3'}
               onMouseLeave={e=>e.currentTarget.style.backgroundColor='var(--acc)'}>저장</button>
           </div>
         </div>
+    </React.Fragment>
+  );
+  if(inline){
+    return(
+      <div style={{display:'flex',flexDirection:'column',height:'100%',width:'100%',backgroundColor:'#fff',overflow:'hidden'}}>
+        {body}
+      </div>
+    );
+  }
+  return(
+    <div style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{width:760,maxWidth:'96vw',maxHeight:'92vh',minWidth:520,minHeight:380,resize:'both',backgroundColor:'#fff',
+        borderRadius:16,overflow:'auto',display:'flex',flexDirection:'column',
+        boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',animation:'popIn 0.18s ease'}}>
+        {body}
       </div>
     </div>
   );
@@ -4830,15 +4842,20 @@ function PanelToggle(){
 }
 function RightNotesPanel(){
   const[modal,setModal]=useState(null);
-  const{rightWidth,setRightWidth}=useLayout();
+  const{rightWidth,setRightWidth,leftWidth,leftCollapsed}=useLayout();
   const onResizeMouseDown=React.useCallback((e)=>{
     e.preventDefault();
     const startX=e.clientX,startW=rightWidth;
-    const onMove=(ev)=>{const w=Math.max(220,Math.min(520,startW-(ev.clientX-startX)));setRightWidth(w);};
+    const onMove=(ev)=>{
+      const usedLeft=leftCollapsed?0:leftWidth;
+      const dynMax=Math.max(280,window.innerWidth-usedLeft-280);
+      const w=Math.max(220,Math.min(dynMax,startW-(ev.clientX-startX)));
+      setRightWidth(w);
+    };
     const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
     document.addEventListener('mousemove',onMove);
     document.addEventListener('mouseup',onUp);
-  },[rightWidth,setRightWidth]);
+  },[rightWidth,setRightWidth,leftWidth,leftCollapsed]);
   return(
     <aside style={{position:'fixed',top:46,right:0,width:rightWidth,height:'calc(100vh - 46px)',background:'#FAFAF7',
       borderLeft:'0.5px solid #EDEDEA',display:'flex',flexDirection:'column',zIndex:50,boxSizing:'border-box'}}>
@@ -4846,14 +4863,21 @@ function RightNotesPanel(){
         style={{position:'absolute',top:0,left:0,width:5,height:'100%',cursor:'col-resize',zIndex:101}}
         onMouseEnter={e=>e.currentTarget.style.backgroundColor='rgba(var(--acc-rgb),0.12)'}
         onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}/>
-      <div style={{height:36,display:'flex',alignItems:'center',padding:'0 14px',gap:6,borderBottom:'0.5px solid #EDEDEA',flexShrink:0}}>
-        <span style={{fontSize:12,fontWeight:700,flex:1}}>📋 회의록</span>
-        <button onClick={()=>setModal({})} style={{fontSize:10.5,color:'var(--acc)',fontWeight:600,padding:'3px 10px',borderRadius:6,background:'var(--acc-bg)'}}>+ 새 회의록</button>
-      </div>
-      <div style={{flex:1,overflowY:'auto',padding:'10px 12px'}}>
-        <MeetingNoteList onOpen={note=>setModal(note)}/>
-      </div>
-      {modal&&<MeetingNoteModal initialNote={modal?.id?modal:null} onClose={()=>setModal(null)}/>}
+      {!modal?(
+        <React.Fragment>
+          <div style={{height:36,display:'flex',alignItems:'center',padding:'0 14px',gap:6,borderBottom:'0.5px solid #EDEDEA',flexShrink:0}}>
+            <span style={{fontSize:12,fontWeight:700,flex:1}}>📋 회의록</span>
+            <button onClick={()=>setModal({})} style={{fontSize:10.5,color:'var(--acc)',fontWeight:600,padding:'3px 10px',borderRadius:6,background:'var(--acc-bg)'}}>+ 새 회의록</button>
+          </div>
+          <div style={{flex:1,overflowY:'auto',padding:'10px 12px'}}>
+            <MeetingNoteList onOpen={note=>setModal(note)}/>
+          </div>
+        </React.Fragment>
+      ):(
+        <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column'}}>
+          <MeetingNoteModal inline initialNote={modal?.id?modal:null} onClose={()=>setModal(null)}/>
+        </div>
+      )}
     </aside>
   );
 }
