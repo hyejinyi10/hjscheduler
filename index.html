@@ -4803,9 +4803,9 @@ function ViewTabs(){
   return<div style={{display:'flex',gap:2,flexShrink:0}}>{tab('monthly','월간')}{tab('weekly','주간')}</div>;
 }
 function MainArea(){
-  const{leftWidth,leftCollapsed,isMobile:_m,centerTab}=useLayout();
+  const{leftWidth,leftCollapsed,rightWidth,isMobile:_m,centerTab}=useLayout();
   return(
-    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginRight:_m?0:300,marginTop:_m?44:46,
+    <main style={{marginLeft:(_m||leftCollapsed)?0:leftWidth,marginRight:_m?0:rightWidth,marginTop:_m?44:46,
       height:_m?'calc(100vh - 94px)':'calc(100vh - 46px)',display:'flex',flexDirection:'column',
       backgroundColor:'#FAFAF7',transition:'margin-left 0.2s ease,margin-right 0.2s ease',overflow:'hidden'}}>
       {(!_m&&centerTab==='weekly')&&<WeeklySection/>}
@@ -4830,9 +4830,22 @@ function PanelToggle(){
 }
 function RightNotesPanel(){
   const[modal,setModal]=useState(null);
+  const{rightWidth,setRightWidth}=useLayout();
+  const onResizeMouseDown=React.useCallback((e)=>{
+    e.preventDefault();
+    const startX=e.clientX,startW=rightWidth;
+    const onMove=(ev)=>{const w=Math.max(220,Math.min(520,startW-(ev.clientX-startX)));setRightWidth(w);};
+    const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  },[rightWidth,setRightWidth]);
   return(
-    <aside style={{position:'fixed',top:46,right:0,width:300,height:'calc(100vh - 46px)',background:'#FAFAF7',
-      borderLeft:'0.5px solid #EDEDEA',display:'flex',flexDirection:'column',zIndex:50}}>
+    <aside style={{position:'fixed',top:46,right:0,width:rightWidth,height:'calc(100vh - 46px)',background:'#FAFAF7',
+      borderLeft:'0.5px solid #EDEDEA',display:'flex',flexDirection:'column',zIndex:50,boxSizing:'border-box'}}>
+      <div onMouseDown={onResizeMouseDown}
+        style={{position:'absolute',top:0,left:0,width:5,height:'100%',cursor:'col-resize',zIndex:101}}
+        onMouseEnter={e=>e.currentTarget.style.backgroundColor='rgba(var(--acc-rgb),0.12)'}
+        onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}/>
       <div style={{height:36,display:'flex',alignItems:'center',padding:'0 14px',gap:6,borderBottom:'0.5px solid #EDEDEA',flexShrink:0}}>
         <span style={{fontSize:12,fontWeight:700,flex:1}}>📋 회의록</span>
         <button onClick={()=>setModal({})} style={{fontSize:10.5,color:'var(--acc)',fontWeight:600,padding:'3px 10px',borderRadius:6,background:'var(--acc-bg)'}}>+ 새 회의록</button>
@@ -5003,6 +5016,7 @@ function App(){
   const[mobileTab,setMobileTab]=React.useState('month');
   const[centerTab,setCenterTab]=React.useState('monthly');
   const[leftWidth,setLeftWidth]=React.useState(220);
+  const[rightWidth,setRightWidth]=React.useState(300);
   const[leftCollapsed,setLeftCollapsed]=React.useState(false);
   const[weeklyHeight,setWeeklyHeight]=React.useState(220);
   const[freeNotePanelHeight,setFreeNotePanelHeight]=React.useState(200);
@@ -5017,7 +5031,7 @@ function App(){
   React.useEffect(()=>{if(activeNoteId)setRightDockOpen(true);},[activeNoteId]);
   React.useEffect(()=>{if(selectedStickerId)setRightDockOpen(true);},[selectedStickerId]);
   return(
-    <LayoutContext.Provider value={{leftWidth,setLeftWidth,leftCollapsed,setLeftCollapsed,weeklyHeight,setWeeklyHeight,freeLayerVisible,setFreeLayerVisible,calendarScrollRef,scrollToTodayRef,scrollToDateRef,freeNotePanelHeight,setFreeNotePanelHeight,activeNoteId,setActiveNoteId,stickerMode,setStickerMode,selectedStickerId,setSelectedStickerId,rightDockOpen,setRightDockOpen,isMobile,mobileTab,setMobileTab,centerTab,setCenterTab}}>
+    <LayoutContext.Provider value={{leftWidth,setLeftWidth,rightWidth,setRightWidth,leftCollapsed,setLeftCollapsed,weeklyHeight,setWeeklyHeight,freeLayerVisible,setFreeLayerVisible,calendarScrollRef,scrollToTodayRef,scrollToDateRef,freeNotePanelHeight,setFreeNotePanelHeight,activeNoteId,setActiveNoteId,stickerMode,setStickerMode,selectedStickerId,setSelectedStickerId,rightDockOpen,setRightDockOpen,isMobile,mobileTab,setMobileTab,centerTab,setCenterTab}}>
       <StoreProvider>
         <ToastProvider>
           <TopBar/>
