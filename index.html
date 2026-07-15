@@ -387,7 +387,7 @@ async function outlookSync(clientId){
   const now=new Date();
   const s=new Date(now.getFullYear()-1,0,1).toISOString();
   const e=new Date(now.getFullYear()+2,0,1).toISOString();
-  const resp=await fetch(`https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${s}&endDateTime=${e}&$top=999&$select=subject,start,end,isAllDay,id`,
+  const resp=await fetch(`https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${s}&endDateTime=${e}&$top=999&$select=subject,start,end,isAllDay,id,location`,
     {headers:{Authorization:`Bearer ${token.accessToken}`,'Content-Type':'application/json'}});
   if(!resp.ok)throw new Error('Graph API 오류: '+resp.status);
   const data=await resp.json();
