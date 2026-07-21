@@ -4937,7 +4937,20 @@ function MobileMonthly(){
   const selEvts=evFor(selDate).sort((a,b)=>(a.time||'99').localeCompare(b.time||'99'));
   const selD=new Date(selDate+'T12:00:00');const dowKr=['일','월','화','수','목','금','토'];
   const shiftM=(dir)=>setVm(v=>{let nm=v.m+dir,ny=v.y;if(nm<1){nm=12;ny--;}if(nm>12){nm=1;ny++;}return{y:ny,m:nm};});
-  return(<div style={{paddingTop:44,paddingBottom:54,minHeight:'100vh',background:'#FAFAF7'}}>
+  const shiftDay=(dir)=>{
+    const d=new Date(selDate+'T12:00:00');d.setDate(d.getDate()+dir);
+    const nk=toDateKey(d);setSelDate(nk);
+    if(d.getFullYear()!==vm.y||d.getMonth()+1!==vm.m)setVm({y:d.getFullYear(),m:d.getMonth()+1});
+  };
+  const touchRef=useRef(null);
+  const onTouchStart=(e)=>{touchRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY};};
+  const onTouchEnd=(e)=>{
+    const st=touchRef.current;if(!st)return;
+    const dx=e.changedTouches[0].clientX-st.x,dy=e.changedTouches[0].clientY-st.y;
+    if(Math.abs(dx)>44&&Math.abs(dx)>Math.abs(dy)*1.5)shiftDay(dx<0?1:-1);
+    touchRef.current=null;
+  };
+  return(<div style={{paddingTop:44,paddingBottom:54,minHeight:'100vh',background:'#FAFAF7',position:'relative'}}>
     <div style={{padding:'14px 16px 6px',display:'flex',alignItems:'baseline',gap:6}}>
       <span style={{fontSize:20,fontWeight:800,letterSpacing:'-0.4px'}}>{m}월</span><span style={{fontSize:13,fontWeight:500,color:'#A8A8A4'}}>{y}</span><span style={{flex:1}}/>
       <button onClick={()=>shiftM(-1)} style={{fontSize:13,color:'var(--acc)',fontWeight:600}}>‹</button>
@@ -4956,20 +4969,27 @@ function MobileMonthly(){
           <div style={{display:'flex',gap:2,marginTop:1,justifyContent:'center',minHeight:4}}>{dots.map((cl,j)=>(<span key={j} style={{width:4,height:4,borderRadius:'50%',background:cl}}/>))}</div>
         </div>);})}
     </div>
-    <div style={{padding:'14px 16px 6px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-      <span style={{fontSize:13,fontWeight:700}}>Events · {selD.getDate()} {dowKr[selD.getDay()]}{getHoliday(selDate)?' · '+getHoliday(selDate):''}</span>
-      <button onClick={()=>setAddOpen(selDate)} style={{fontSize:16,color:'var(--acc)',width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{touchAction:'pan-y'}}>
+      <div style={{padding:'14px 16px 6px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <span style={{fontSize:13,fontWeight:700}}>Events · {selD.getDate()} {dowKr[selD.getDay()]}{getHoliday(selDate)?' · '+getHoliday(selDate):''}</span>
+        <span style={{fontSize:9.5,color:'#C8C8C2'}}>‹ 밀어서 날짜 이동 ›</span>
+      </div>
+      {selEvts.length===0&&<div style={{textAlign:'center',color:'#D0D0CA',fontSize:11.5,padding:'20px 0'}}>일정 없음</div>}
+      {selEvts.map(ev=>(<div key={ev.id} onClick={()=>setDetailEvt(ev)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 16px',cursor:'pointer'}}>
+        <div style={{width:3,height:28,borderRadius:1.5,flexShrink:0,background:catDot(ev.category)}}/>
+        <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:'#2C2C2E',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{ev.title}</div>
+        <div style={{display:'flex',alignItems:'center',gap:5,marginTop:1}}>
+          <span style={{fontSize:11,color:'#B0B0AA',fontWeight:500}}>{catLabel(ev.category)}</span>
+          {ev.location&&<span style={{fontSize:10.5,fontWeight:600,color:'var(--acc)',backgroundColor:'var(--acc-bg)',borderRadius:5,padding:'1px 6px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:120}}>📍{ev.location}</span>}
+        </div></div>
+        <span style={{fontSize:11,color:'#B0B0AA',flexShrink:0}}>{ev.time||'종일'}</span>
+      </div>))}
     </div>
-    {selEvts.length===0&&<div style={{textAlign:'center',color:'#D0D0CA',fontSize:11.5,padding:'20px 0'}}>일정 없음</div>}
-    {selEvts.map(ev=>(<div key={ev.id} onClick={()=>setDetailEvt(ev)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 16px',cursor:'pointer'}}>
-      <div style={{width:3,height:28,borderRadius:1.5,flexShrink:0,background:catDot(ev.category)}}/>
-      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:'#2C2C2E',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{ev.title}</div>
-      <div style={{display:'flex',alignItems:'center',gap:5,marginTop:1}}>
-        <span style={{fontSize:11,color:'#B0B0AA',fontWeight:500}}>{catLabel(ev.category)}</span>
-        {ev.location&&<span style={{fontSize:10.5,fontWeight:600,color:'var(--acc)',backgroundColor:'var(--acc-bg)',borderRadius:5,padding:'1px 6px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:120}}>📍{ev.location}</span>}
-      </div></div>
-      <span style={{fontSize:11,color:'#B0B0AA',flexShrink:0}}>{ev.time||'종일'}</span>
-    </div>))}
+    <button onClick={()=>setAddOpen(selDate)} title="일정 추가"
+      style={{position:'fixed',right:20,bottom:66,width:52,height:52,borderRadius:'50%',
+        backgroundColor:'var(--acc)',color:'#fff',fontSize:28,fontWeight:300,lineHeight:1,zIndex:120,
+        display:'flex',alignItems:'center',justifyContent:'center',
+        boxShadow:'0 4px 14px rgba(var(--acc-rgb),0.4), 0 1px 3px rgba(15,15,35,0.15)'}}>+</button>
     {addOpen&&<EventPopover date={addOpen} onClose={()=>setAddOpen(null)}/>}
     {detailEvt&&<EventDetailPopover event={detailEvt} onClose={()=>setDetailEvt(null)}/>}
   </div>);
@@ -5018,6 +5038,11 @@ function MobileWeekly(){
     </div>))}</div>
     {addDate&&<EventPopover date={addDate} onClose={()=>setAddDate(null)}/>}
     {detailEvt&&<EventDetailPopover event={detailEvt} onClose={()=>setDetailEvt(null)}/>}
+    <button onClick={()=>setAddDate(days.find(d=>d.td)?today:days[0].k)} title="일정 추가"
+      style={{position:'fixed',right:20,bottom:66,width:52,height:52,borderRadius:'50%',
+        backgroundColor:'var(--acc)',color:'#fff',fontSize:28,fontWeight:300,lineHeight:1,zIndex:120,
+        display:'flex',alignItems:'center',justifyContent:'center',
+        boxShadow:'0 4px 14px rgba(var(--acc-rgb),0.4), 0 1px 3px rgba(15,15,35,0.15)'}}>+</button>
   </div>);
 }
 function MobileMeetings(){
