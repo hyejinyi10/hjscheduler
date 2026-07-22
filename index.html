@@ -103,16 +103,26 @@ const tagColor=(tag)=>{
 // 큐레이션 데이터 — 정적 시드. 자동 갱신 불가(정적 사이트라 서버/크론 없음): 매달 Claude에게 새로고침 요청 필요.
 const EXHIBITION_DATA_MONTH='2026-07';
 const EXHIBITION_PICKS=[
+  {title:'뱅크시: Still Here',venue:'더현대서울 ALT.1',period:'7.22 – 11.3',tag:'디자인',
+    blurb:'스트리트 아티스트 뱅크시의 대규모 특별전 — 예매 시작 보름 만에 티켓 3만 장 판매, 요즘 가장 화제.'},
+  {title:'서도호 개인전',venue:'국립현대미술관 서울',period:'8.27 개막예정',tag:'건축',
+    blurb:'설치미술가 서도호의 사상 최대 규모 개인전. 아직 개막 전이라 미리 일정 잡아두기 좋아요.'},
   {title:'유영국: 산은 내 안에 있다',venue:'서울시립미술관 서소문본관',period:'5.19 – 10.25',tag:'회화',
     blurb:'한국 추상미술의 거장 유영국을 조명하는 역대 최대 규모 회고전.'},
   {title:'마틴 파: We Are Martin Parr',venue:'서울시립 사진미술관',period:'7.16 – 10.18',tag:'디자인',
     blurb:'영국 사진작가 마틴 파의 초기작부터 최근작까지, 전관 규모로 선보이는 회고전.'},
-  {title:'알렉스 카츠 〈Studies〉',venue:'타데우스 로팍 서울',period:'5.22 – 8.1',tag:'회화',
-    blurb:'미국 현대 회화의 거장 알렉스 카츠의 신작 연구 시리즈 — 곧 종료되니 서두르는 게 좋아요.'},
   {title:'고야: 이성이 잠들 때, 괴물이 깨어난다',venue:'예술의전당 한가람미술관',period:'~ 9.30',tag:'회화',
     blurb:'스페인 거장 프란시스코 고야의 판화·회화를 만나는 대규모 전시.'},
+  {title:'알렉스 카츠 〈Studies〉',venue:'타데우스 로팍 서울',period:'5.22 – 8.1',tag:'회화',
+    blurb:'미국 현대 회화의 거장 알렉스 카츠의 신작 연구 시리즈 — 곧 종료되니 서두르는 게 좋아요.'},
   {title:'이정윤: 노래하는 집',venue:'김중업 건축문화의 집(성북구)',period:'4.17 – 11.21',tag:'건축',
     blurb:'건축가 김중업의 공간을 동시대 설치미술로 재해석. 화~토 운영·무료입장(8월 휴관).'},
+  {title:'박대성: 고요가 머무는 곳',venue:'가나아트 남산(용산구)',period:'~ 8.17',tag:'회화',
+    blurb:'한국화 거장 박대성의 개인전. 무료입장.'},
+  {title:'조은 원화전: 오늘의 정원',venue:'그라운드시소 이스트',period:'7.17 – 11.19',tag:'디자인',
+    blurb:'일러스트레이터 조은의 원화 전시 — 정원을 테마로 한 아기자기한 연출이 볼거리.'},
+  {title:'브라이언 와일드 스미스 전',venue:'한가람미술관 서예박물관',period:'7.7 – 10.16',tag:'디자인',
+    blurb:'세계적인 일러스트레이터 브라이언 와일드 스미스의 그림책 원화 전시.'},
 ];
 const FONT_OPTIONS = [
   {id:'pretendard',label:'Pretendard',css:"'Pretendard Variable',Pretendard,'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
@@ -1900,7 +1910,7 @@ function ExhibitionModal({onClose}){
         <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
           {/* 큐레이션 TOP5 */}
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-            <span style={{fontSize:11,fontWeight:700,color:'var(--acc)',letterSpacing:'0.3px'}}>요즘 화제의 전시 TOP 5</span>
+            <span style={{fontSize:11,fontWeight:700,color:'var(--acc)',letterSpacing:'0.3px'}}>요즘 화제의 전시 TOP 10</span>
             <span style={{fontSize:10,color:'#C4C4C4'}}>{EXHIBITION_DATA_MONTH.replace('-','.')} 기준</span>
             {monthsSince>=2&&<span style={{fontSize:10,color:'#E24B4A',backgroundColor:'#FFF0EF',borderRadius:8,padding:'1px 7px'}}>정보가 {monthsSince}개월 전 것이에요 — Claude에게 "전시 정보 새로고침해줘"라고 요청해보세요</span>}
           </div>
@@ -1909,6 +1919,7 @@ function ExhibitionModal({onClose}){
               const c=tagColor(p.tag);
               return(
                 <div key={i} style={{display:'flex',gap:10,padding:'9px 11px',borderRadius:9,border:'0.5px solid #EDEDEA',backgroundColor:'#FAFAF8'}}>
+                  <div style={{width:20,flexShrink:0,fontSize:13,fontWeight:800,color:i<3?'var(--acc)':'#C8C8C4',textAlign:'center',paddingTop:2}}>{i+1}</div>
                   <div style={{width:3,flexShrink:0,borderRadius:2,backgroundColor:c}}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
@@ -5506,6 +5517,43 @@ function RightDock(){
   );
 }
 const SAT_TEAL='#4EB8B8';
+function MobileTodoSection({dateKey}){
+  const{state,dispatch}=useStore();
+  const catStyle=useDynCatStyle();
+  const[val,setVal]=useState('');
+  const[cat,setCat]=useState('work');
+  const todos=(state.todos||[]).filter(t=>{
+    if(t.date!==dateKey)return false;
+    if(t.category==='work')return state.workVisible;
+    if(t.category==='personal')return state.personalVisible;
+    return true;
+  });
+  const submit=()=>{const t=val.trim();if(t){dispatch({type:'ADD_TODO',date:dateKey,text:t,category:cat});setVal('');}};
+  const isToday_=dateKey===toDateKey(new Date());
+  const d=new Date(dateKey+'T12:00:00');const dowKr=['일','월','화','수','목','금','토'];
+  const label=isToday_?'오늘의 할 일':`${d.getMonth()+1}/${d.getDate()} ${dowKr[d.getDay()]} 할 일`;
+  return(
+    <div style={{borderTop:'6px solid #F3F3F0',backgroundColor:'#fff',padding:'12px 16px 16px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <span style={{fontSize:13,fontWeight:700,color:'var(--acc)'}}>✓ {label}</span>
+        {todos.length>0&&<span style={{fontSize:11,color:'#C4C4C4'}}>{todos.filter(t=>t.done).length}/{todos.length}</span>}
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:2,marginBottom:8}}>
+        {todos.length===0&&<div style={{fontSize:12,color:'#D0D0CA',padding:'4px 0'}}>할 일이 없습니다</div>}
+        {todos.map(t=><TodoItem key={t.id} todo={t} onToggle={()=>dispatch({type:'TOGGLE_TODO',id:t.id})} onDelete={()=>dispatch({type:'DELETE_TODO',id:t.id})} onEdit={txt=>dispatch({type:'UPDATE_TODO',id:t.id,updates:{text:txt}})}/>)}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:6}}>
+        <button onClick={()=>setCat(c=>c==='work'?'personal':'work')} style={{fontSize:10.5,padding:'5px 9px',borderRadius:5,flexShrink:0,
+          border:`0.5px solid ${cat==='work'?catStyle.work.border:catStyle.personal.border}`,
+          backgroundColor:cat==='work'?catStyle.work.bg:catStyle.personal.bg,
+          color:cat==='work'?catStyle.work.text:catStyle.personal.text}}>{cat==='work'?(state.workLabel||'업무'):(state.personalLabel||'개인')}</button>
+        <input value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')submit();}}
+          placeholder="+ 할 일 추가" style={{flex:1,fontSize:13,color:'#333',borderBottom:'0.5px solid #E8E8E8',paddingBottom:5}}/>
+        <button onClick={submit} style={{fontSize:12,color:'var(--acc)',fontWeight:600,padding:'5px 10px',flexShrink:0}}>추가</button>
+      </div>
+    </div>
+  );
+}
 function MobileMonthly(){
   const{state,dispatch}=useStore();
   const cs=useDynCatStyle();
@@ -5539,7 +5587,7 @@ function MobileMonthly(){
   const onTouchEnd=(e)=>{
     const st=touchRef.current;if(!st)return;
     const dx=e.changedTouches[0].clientX-st.x,dy=e.changedTouches[0].clientY-st.y;
-    if(Math.abs(dx)>44&&Math.abs(dx)>Math.abs(dy)*1.5)shiftDay(dx<0?1:-1);
+    if(Math.abs(dx)>44&&Math.abs(dx)>Math.abs(dy)*1.5){e.stopPropagation();shiftDay(dx<0?1:-1);}
     touchRef.current=null;
   };
   return(<div style={{paddingTop:44,paddingBottom:54,minHeight:'100vh',background:'#FAFAF7',position:'relative'}}>
@@ -5577,6 +5625,7 @@ function MobileMonthly(){
         <span style={{fontSize:11,color:'#B0B0AA',flexShrink:0}}>{ev.time||'종일'}</span>
       </div>))}
     </div>
+    <MobileTodoSection dateKey={selDate}/>
     <button onClick={()=>setAddOpen(selDate)} title="일정 추가"
       style={{position:'fixed',right:20,bottom:66,width:52,height:52,borderRadius:'50%',
         backgroundColor:'var(--acc)',color:'#fff',fontSize:28,fontWeight:300,lineHeight:1,zIndex:120,
@@ -5666,6 +5715,19 @@ function MobileBottomNav(){
 function App(){
   const isMobile=useIsMobile();
   const[mobileTab,setMobileTab]=React.useState('month');
+  const mobSwipeRef=React.useRef(null);
+  const MOB_TAB_ORDER=['month','week','meetings'];
+  const onMobTabTouchStart=(e)=>{mobSwipeRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY};};
+  const onMobTabTouchEnd=(e)=>{
+    const st=mobSwipeRef.current;if(!st)return;
+    const dx=e.changedTouches[0].clientX-st.x,dy=e.changedTouches[0].clientY-st.y;
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){
+      const idx=MOB_TAB_ORDER.indexOf(mobileTab);
+      if(dx<0&&idx<MOB_TAB_ORDER.length-1)setMobileTab(MOB_TAB_ORDER[idx+1]);
+      if(dx>0&&idx>0)setMobileTab(MOB_TAB_ORDER[idx-1]);
+    }
+    mobSwipeRef.current=null;
+  };
   const[centerTab,setCenterTab]=React.useState('monthly');
   const[leftWidth,setLeftWidth]=React.useState(220);
   const[rightWidth,setRightWidth]=React.useState(300);
@@ -5689,9 +5751,11 @@ function App(){
           <TopBar/>
           <IcalAutoSync/>
           {!isMobile&&<LeftPanel/>}
-          {isMobile&&mobileTab==='month'&&<MobileMonthly/>}
-          {isMobile&&mobileTab==='week'&&<MobileWeekly/>}
-          {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
+          <div onTouchStart={isMobile?onMobTabTouchStart:undefined} onTouchEnd={isMobile?onMobTabTouchEnd:undefined} style={{display:'contents'}}>
+            {isMobile&&mobileTab==='month'&&<MobileMonthly/>}
+            {isMobile&&mobileTab==='week'&&<MobileWeekly/>}
+            {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
+          </div>
           {!isMobile&&<MainArea/>}
           {!isMobile&&<RightNotesPanel/>}
           {!isMobile&&<RightDock/>}
