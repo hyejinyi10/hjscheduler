@@ -4631,7 +4631,7 @@ function WeeklyDayRow({date}){
   const dowColor=td?'var(--acc)':red?'#D06A6A':sat?'#4EB8B8':'#8A8A86';
   const submitTodo=()=>{const t=todoVal.trim();if(t)dispatch({type:'ADD_TODO',date:dk,text:t,category:todoCat});setTodoVal('');setTodoActive(false);};
   return(
-    <div style={{display:'flex',borderBottom:'0.5px solid #EDEDEA',minHeight:88}}>
+    <div data-daykey={dk} style={{display:'flex',borderBottom:'0.5px solid #EDEDEA',minHeight:88}}>
       <div onDoubleClick={()=>setPopoverDate(dk)} title="더블클릭 → 일정 추가"
         style={{width:80,flexShrink:0,padding:'10px 0 10px 16px',borderRight:'0.5px solid #F5F5F2',cursor:'pointer'}}>
         <div style={{fontSize:10,fontWeight:700,letterSpacing:'0.2px',color:dowColor}}>{DE[date.getDay()]}</div>
@@ -4689,16 +4689,20 @@ function WeeklyDayRow({date}){
 function WeeklySection(){
   const{state,dispatch}=useStore();
   const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,calendarScrollRef,isMobile}=useLayout();
-  const chronoDates=getWeekDates(state.weekOffset);
-  let weekDates=chronoDates;
-  if(state.weekOffset===0){
+  const weekDates=getWeekDates(state.weekOffset);
+  React.useEffect(()=>{
+    if(state.weekOffset!==0)return;
     const todayKey=toDateKey(new Date());
-    const idx=chronoDates.findIndex(d=>toDateKey(d)===todayKey);
-    if(idx>0)weekDates=[...chronoDates.slice(idx),...chronoDates.slice(0,idx)];
-  }
+    const container=calendarScrollRef?.current;
+    if(!container)return;
+    requestAnimationFrame(()=>{
+      const el=container.querySelector(`[data-daykey="${todayKey}"]`);
+      if(el)container.scrollTop=el.offsetTop;
+    });
+  },[state.weekOffset]);
   return(
     <section style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,backgroundColor:'#FAFAF7',position:'relative'}}>
-      <WeeklyHeader weekDates={chronoDates}
+      <WeeklyHeader weekDates={weekDates}
         onPrev={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset-1})}
         onNext={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset+1})}
         onToday={()=>dispatch({type:'SET_WEEK_OFFSET',payload:0})}/>
