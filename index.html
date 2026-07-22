@@ -5009,7 +5009,7 @@ function YearView({year,onSelectMonth}){
     </div>
   );
 }
-function TodayTasksPanel({dateKey}){
+function TodayTasksPanel({dateKey,height,onResize}){
   const{state,dispatch}=useStore();
   const catStyle=useDynCatStyle();
   const[val,setVal]=useState('');
@@ -5026,8 +5026,23 @@ function TodayTasksPanel({dateKey}){
   const dowKr=['일','월','화','수','목','금','토'];
   const isToday_=dateKey===toDateKey(new Date());
   const label=isToday_?'오늘의 할 일':`${d.getMonth()+1}/${d.getDate()} ${dowKr[d.getDay()]} 할 일`;
+  const onResizeMouseDown=React.useCallback((e)=>{
+    e.preventDefault();
+    const startY=e.clientY,startH=height;
+    const onMove=(ev)=>{const nh=Math.max(60,Math.min(420,startH-(ev.clientY-startY)));onResize(nh);};
+    const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  },[height,onResize]);
   return(
-    <div style={{flexShrink:0,borderTop:'0.5px solid #EBEBEB',backgroundColor:'#fff',padding:'10px 20px',maxHeight:168,overflowY:'auto'}}>
+    <div style={{flexShrink:0,borderTop:'0.5px solid #EBEBEB',backgroundColor:'#fff',height,overflowY:'auto',position:'relative'}}>
+      <div onMouseDown={onResizeMouseDown} title="드래그해서 높이 조절"
+        style={{position:'absolute',top:-3,left:0,right:0,height:6,cursor:'row-resize',zIndex:5,display:'flex',alignItems:'center',justifyContent:'center'}}
+        onMouseEnter={e=>e.currentTarget.firstChild.style.backgroundColor='var(--acc-brd)'}
+        onMouseLeave={e=>e.currentTarget.firstChild.style.backgroundColor='#E2E2DC'}>
+        <span style={{width:32,height:3,borderRadius:2,backgroundColor:'#E2E2DC',transition:'background-color 0.15s'}}/>
+      </div>
+      <div style={{padding:'10px 20px'}}>
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
         <span style={{fontSize:11,fontWeight:700,color:'var(--acc)',letterSpacing:'0.3px'}}>✓ {label}</span>
         {todos.length>0&&<span style={{fontSize:10.5,color:'#C4C4C4'}}>{todos.filter(t=>t.done).length}/{todos.length}</span>}
@@ -5043,6 +5058,7 @@ function TodayTasksPanel({dateKey}){
           color:cat==='work'?catStyle.work.text:catStyle.personal.text}}>{cat==='work'?(state.workLabel||'업무').slice(0,2):(state.personalLabel||'개인').slice(0,2)}</button>
         <input ref={inputRef} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')submit();}}
           placeholder="+ 할 일 추가" style={{flex:1,fontSize:12,color:'#333',borderBottom:'0.5px solid #E8E8E8',paddingBottom:2}}/>
+      </div>
       </div>
     </div>
   );
@@ -5064,6 +5080,7 @@ function CalendarSection(){
   const[navYear,setNavYear]=useState(today_.getFullYear());
   const[navMonth,setNavMonth]=useState(today_.getMonth());
   const[selDay,setSelDay]=useState(toDateKey(today_));
+  const[taskPanelH,setTaskPanelH]=useState(168);
 
   // Generate flat list of all weeks (-13..+13 months from today)
   const allWeeks=useMemo(()=>{
@@ -5219,7 +5236,7 @@ function CalendarSection(){
           </div>
         );
       })()}
-      {!yearView&&<TodayTasksPanel dateKey={selDay}/>}
+      {!yearView&&<TodayTasksPanel dateKey={selDay} height={taskPanelH} onResize={setTaskPanelH}/>}
       {/* 노트·스티커 추가 FAB */}
       {!yearView&&!isMobile&&<button data-fab="true" onClick={()=>{setFreeLayerVisible(true);setStickerMode(true);setRightDockOpen(true);}}
         title="포스트잇·스티커 추가"
