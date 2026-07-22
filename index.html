@@ -5754,19 +5754,6 @@ function MobileBottomNav(){
 function App(){
   const isMobile=useIsMobile();
   const[mobileTab,setMobileTab]=React.useState('month');
-  const mobSwipeRef=React.useRef(null);
-  const MOB_TAB_ORDER=['month','week','meetings'];
-  const onMobTabTouchStart=(e)=>{mobSwipeRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY};};
-  const onMobTabTouchEnd=(e)=>{
-    const st=mobSwipeRef.current;if(!st)return;
-    const dx=e.changedTouches[0].clientX-st.x,dy=e.changedTouches[0].clientY-st.y;
-    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){
-      const idx=MOB_TAB_ORDER.indexOf(mobileTab);
-      if(dx<0&&idx<MOB_TAB_ORDER.length-1)setMobileTab(MOB_TAB_ORDER[idx+1]);
-      if(dx>0&&idx>0)setMobileTab(MOB_TAB_ORDER[idx-1]);
-    }
-    mobSwipeRef.current=null;
-  };
   const[centerTab,setCenterTab]=React.useState('monthly');
   const[leftWidth,setLeftWidth]=React.useState(220);
   const[rightWidth,setRightWidth]=React.useState(300);
@@ -5790,11 +5777,9 @@ function App(){
           <TopBar/>
           <IcalAutoSync/>
           {!isMobile&&<LeftPanel/>}
-          <div onTouchStart={isMobile?onMobTabTouchStart:undefined} onTouchEnd={isMobile?onMobTabTouchEnd:undefined} style={{display:'contents'}}>
-            {isMobile&&mobileTab==='month'&&<MobileMonthly/>}
-            {isMobile&&mobileTab==='week'&&<MobileWeekly/>}
-            {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
-          </div>
+          {isMobile&&mobileTab==='month'&&<MobileMonthly/>}
+          {isMobile&&mobileTab==='week'&&<MobileWeekly/>}
+          {isMobile&&mobileTab==='meetings'&&<MobileMeetings/>}
           {!isMobile&&<MainArea/>}
           {!isMobile&&<RightNotesPanel/>}
           {!isMobile&&<RightDock/>}
