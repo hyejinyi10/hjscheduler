@@ -2355,6 +2355,9 @@ function TopBar(){
         </div>
       )}
       <div style={{flex:1}}/>
+      {_mob&&<button onClick={()=>setIdeaOpen(true)} title="아이디어 노트"
+        style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:'50%',
+          fontSize:16,backgroundColor:'#F7F7F7',border:'0.5px solid #E8E8E8',flexShrink:0,marginRight:2}}>💡</button>}
       {/* Layer chips row — unified, all draggable */}
       <div style={{display:_mob?'none':'flex',alignItems:'center',gap:6,overflowX:'auto',flexShrink:1}}>
         {(()=>{
