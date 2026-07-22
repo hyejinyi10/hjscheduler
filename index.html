@@ -223,7 +223,7 @@ const initialState={
   titleText:lsLoad('titleText','혜진 스케줄러'),topBarBg:lsLoad('topBarBg','#ffffff'),topBarImg:lsLoad('topBarImg',''),
   titleFontSize:lsLoad('titleFontSize',21),titleFontFamily:lsLoad('titleFontFamily','inherit'),appFont:lsLoad('appFont','pretendard'),
   leftAgendaOrder:lsLoad('leftAgendaOrder',{}),
-  ideaNotes:lsLoad('ideaNotes',[]),
+  ideaNotes:lsLoad('ideaNotes',[]).map(n=>n.blocks?n:{id:n.id,title:n.text||'',tag:n.tag||'미분류',createdAt:n.createdAt,updatedAt:n.createdAt,blocks:[{id:uid(),type:'p',text:n.text||'',html:(n.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),indent:0,checked:false}]}),
   themeAccent:lsLoad('themeAccent','#B79C7A'),panelBg:lsLoad('panelBg',''),panelImg:lsLoad('panelImg',''),weeklyBg:lsLoad('weeklyBg',''),monthlyBg:lsLoad('monthlyBg',''),
   outlookVisible:lsLoad('outlookVisible',true),outlookColor:lsLoad('outlookColor','#BA7517'),
   customLayers:lsLoad('customLayers',[]),
@@ -306,8 +306,8 @@ function reducer(state,action){
     case 'SET_TITLE_FONT_FAMILY':return{...state,titleFontFamily:action.family};
     case 'SET_APP_FONT':return{...state,appFont:action.font};
     case 'SET_AGENDA_ORDER':return{...state,leftAgendaOrder:{...state.leftAgendaOrder,[action.date]:action.order}};
-    case 'ADD_IDEA':return{...state,ideaNotes:[{id:uid(),text:action.text,tag:action.tag||'미분류',createdAt:new Date().toISOString()},...state.ideaNotes]};
-    case 'UPDATE_IDEA':return{...state,ideaNotes:state.ideaNotes.map(n=>n.id===action.id?{...n,...action.updates}:n)};
+    case 'ADD_IDEA_PAGE':return{...state,ideaNotes:[action.note,...state.ideaNotes]};
+    case 'UPDATE_IDEA_PAGE':return{...state,ideaNotes:state.ideaNotes.map(n=>n.id===action.id?{...n,...action.updates}:n)};
     case 'DELETE_IDEA':return{...state,ideaNotes:state.ideaNotes.filter(n=>n.id!==action.id)};
     case 'SET_THEME':return{...state,[action.key]:action.value};
     case 'SET_ICAL_FEEDS':return{...state,icalFeeds:action.feeds};
@@ -1660,113 +1660,162 @@ function ColorPickerPopover({selectedColor,onSelect,onClose,style={},colors=PROJ
   );
 }
 
+function IdeaPageModal({initialNote,onClose}){
+  const{state,dispatch}=useStore();
+  const isNew=!initialNote?.id||!state.ideaNotes?.find(n=>n.id===initialNote.id);
+  const[note,setNote]=React.useState(()=>initialNote||{
+    id:uid(),title:'',tag:'',
+    blocks:[{id:uid(),type:'p',text:'',html:'',indent:0,checked:false}],
+    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+  });
+  const existingTags=React.useMemo(()=>{
+    const seen={};const arr=[];
+    state.ideaNotes.forEach(n=>{const t=n.tag||'미분류';if(!seen[t]){seen[t]=1;arr.push(t);}});
+    return arr;
+  },[state.ideaNotes]);
+  const save=()=>{
+    const upd={...note,updatedAt:new Date().toISOString()};
+    if(isNew)dispatch({type:'ADD_IDEA_PAGE',note:upd});
+    else dispatch({type:'UPDATE_IDEA_PAGE',id:note.id,updates:upd});
+    onClose();
+  };
+  const del=()=>{if(confirm('이 아이디어를 삭제하시겠습니까?')){dispatch({type:'DELETE_IDEA',id:note.id});onClose();}};
+  const initialSnapRef=React.useRef(null);
+  React.useEffect(()=>{if(initialSnapRef.current===null)initialSnapRef.current=JSON.stringify(note);},[]);
+  const tryClose=()=>{
+    const dirty=initialSnapRef.current!==null&&JSON.stringify(note)!==initialSnapRef.current;
+    if(!dirty||confirm('저장하지 않은 변경사항이 있습니다. 닫을까요?'))onClose();
+  };
+  React.useEffect(()=>{
+    const h=(e)=>{
+      if(e.key==='Escape'){tryClose();}
+      if((e.metaKey||e.ctrlKey)&&(e.key==='s'||e.key==='S')){e.preventDefault();save();}
+    };
+    window.addEventListener('keydown',h);
+    return()=>window.removeEventListener('keydown',h);
+  });
+  return(
+    <div onClick={e=>{if(e.target===e.currentTarget)tryClose();}}
+      style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.45)',zIndex:9100,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
+      <div style={{width:680,maxWidth:'94vw',maxHeight:'88vh',minWidth:420,minHeight:380,backgroundColor:'#fff',borderRadius:16,
+        display:'flex',flexDirection:'column',overflow:'hidden',
+        boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',animation:'popIn 0.18s ease'}}>
+        <div style={{padding:'20px 24px 14px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+            <input autoFocus={isNew} value={note.title} onChange={e=>setNote(n=>({...n,title:e.target.value}))}
+              placeholder="아이디어 제목" style={{flex:1,fontSize:22,fontWeight:700,color:'#111',marginBottom:10,fontFamily:'inherit'}}/>
+            <button onClick={tryClose} style={{fontSize:18,color:'#CCC',lineHeight:1,flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.color='#999'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>
+          </div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+            <span style={{fontSize:11,color:'#B0B0B6'}}>카테고리</span>
+            <input value={note.tag} onChange={e=>setNote(n=>({...n,tag:e.target.value}))}
+              placeholder="미분류" list="idea-tags-modal"
+              style={{fontSize:12,color:'#555',borderBottom:'0.5px solid #EDEDEA',paddingBottom:2,width:110}}/>
+            <datalist id="idea-tags-modal">{existingTags.map(t=><option key={t} value={t}/>)}</datalist>
+            {existingTags.filter(t=>t!==note.tag).slice(0,6).map(t=>(
+              <button key={t} onClick={()=>setNote(n=>({...n,tag:t}))}
+                style={{fontSize:10.5,padding:'2px 9px',borderRadius:20,fontWeight:600,
+                  border:`0.5px solid ${lighten(tagColor(t),0.55)}`,backgroundColor:lighten(tagColor(t),0.88),color:tagColor(t)}}>{t}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{flex:1,overflow:'auto',padding:'16px 24px 12px'}}>
+          <BlockEditor blocks={note.blocks} onBlocksChange={blocks=>setNote(n=>({...n,blocks}))}/>
+        </div>
+        <div style={{padding:'12px 24px',borderTop:'0.5px solid #F0F0F0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+          <div>{!isNew&&<button onClick={del} style={{fontSize:12,color:'#E24B4A',padding:'6px 14px',border:'0.5px solid #FFCDD2',borderRadius:6,backgroundColor:'#FFF5F5',cursor:'pointer'}}>삭제</button>}</div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={tryClose} style={{fontSize:13,color:'#888',padding:'6px 16px',border:'0.5px solid #E0E0E0',borderRadius:6,cursor:'pointer'}}>닫기</button>
+            <button onClick={save} title="Ctrl+S" style={{fontSize:13,color:'#fff',padding:'6px 18px',backgroundColor:'var(--acc)',borderRadius:6,fontWeight:500,cursor:'pointer'}}
+              onMouseEnter={e=>e.currentTarget.style.backgroundColor='#463DA3'}
+              onMouseLeave={e=>e.currentTarget.style.backgroundColor='var(--acc)'}>저장</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function IdeaBoardModal({onClose}){
   const{state,dispatch}=useStore();
-  const[text,setText]=useState('');
-  const[tag,setTag]=useState('');
-  const[view,setView]=useState('list'); // 'list' | 'board'
-  const[editingId,setEditingId]=useState(null);
-  const[editVal,setEditVal]=useState('');
-  const inputRef=useRef(null);
-  useEffect(()=>{setTimeout(()=>inputRef.current?.focus(),60);},[]);
-  useEffect(()=>{const h=(e)=>{if(e.key==='Escape')onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
+  const[view,setView]=useState('table'); // 'table' | 'board'
+  const[openPage,setOpenPage]=useState(null);
+  useEffect(()=>{const h=(e)=>{if(e.key==='Escape'&&!openPage)onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[openPage]);
   const existingTags=React.useMemo(()=>{
-    const set=[];const seen={};
-    state.ideaNotes.forEach(n=>{const t=n.tag||'미분류';if(!seen[t]){seen[t]=true;set.push(t);}});
-    return set;
+    const seen={};const arr=[];
+    state.ideaNotes.forEach(n=>{const t=n.tag||'미분류';if(!seen[t]){seen[t]=1;arr.push(t);}});
+    return arr;
   },[state.ideaNotes]);
-  const add=()=>{
-    const t=text.trim();if(!t)return;
-    dispatch({type:'ADD_IDEA',text:t,tag:tag.trim()||'미분류'});
-    setText('');
-    inputRef.current?.focus();
+  const previewOf=(note)=>{
+    for(const b of (note.blocks||[])){
+      if(b.type==='drawing')return '🖼 그림';
+      if(b.type==='table')return '⊞ 표';
+      const t=(b.text||'').trim();
+      if(t)return t;
+    }
+    return '(빈 페이지)';
   };
+  const fmtDate=(iso)=>{const d=new Date(iso);return `${d.getMonth()+1}/${d.getDate()}`;};
   const grouped=React.useMemo(()=>{
     const m={};
     state.ideaNotes.forEach(n=>{const k=n.tag||'미분류';(m[k]=m[k]||[]).push(n);});
     return Object.entries(m).sort((a,b)=>b[1].length-a[1].length);
   },[state.ideaNotes]);
-  const fmtTime=(iso)=>{
-    const d=new Date(iso);const now=new Date();
-    const sameDay=d.toDateString()===now.toDateString();
-    return sameDay?d.toTimeString().slice(0,5):`${d.getMonth()+1}/${d.getDate()}`;
-  };
-  const startEdit=(n)=>{setEditingId(n.id);setEditVal(n.text);};
-  const commitEdit=()=>{
-    const t=editVal.trim();
-    if(t)dispatch({type:'UPDATE_IDEA',id:editingId,updates:{text:t}});
-    setEditingId(null);
-  };
+  const newPage=()=>setOpenPage({});
   return(
-    <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.32)',zIndex:8500,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
-      <div style={{width:640,maxWidth:'94vw',maxHeight:'86vh',minHeight:420,backgroundColor:'#fff',borderRadius:14,
+    <div onClick={e=>{if(e.target===e.currentTarget&&!openPage)onClose();}} style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.32)',zIndex:8500,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
+      <div style={{width:720,maxWidth:'94vw',maxHeight:'86vh',minHeight:420,backgroundColor:'#fff',borderRadius:14,
         boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',
         display:'flex',flexDirection:'column',overflow:'hidden',animation:'popIn 0.16s ease'}}>
         {/* Header */}
         <div style={{padding:'16px 20px 12px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0,display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:16,fontWeight:700}}>💡 아이디어 노트</span>
-          <span style={{fontSize:11,color:'#B0B0B6'}}>생각날 때 바로 적어두는 곳</span>
+          <span style={{fontSize:11,color:'#B0B0B6'}}>노션 페이지처럼 자유롭게 적어두는 곳</span>
           <span style={{flex:1}}/>
+          <button onClick={newPage} style={{fontSize:11.5,color:'#fff',fontWeight:600,padding:'5px 12px',borderRadius:7,backgroundColor:'var(--acc)'}}>+ 새 아이디어</button>
           <div style={{display:'flex',gap:2,backgroundColor:'#F3F3F0',borderRadius:8,padding:2}}>
-            <button onClick={()=>setView('list')} style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,backgroundColor:view==='list'?'#fff':'transparent',color:view==='list'?'#333':'#999',boxShadow:view==='list'?'0 1px 2px rgba(0,0,0,0.08)':'none'}}>📋 리스트</button>
-            <button onClick={()=>setView('board')} style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,backgroundColor:view==='board'?'#fff':'transparent',color:view==='board'?'#333':'#999',boxShadow:view==='board'?'0 1px 2px rgba(0,0,0,0.08)':'none'}}>🗺 보드</button>
+            <button onClick={()=>setView('table')} style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,backgroundColor:view==='table'?'#fff':'transparent',color:view==='table'?'#333':'#999',boxShadow:view==='table'?'0 1px 2px rgba(0,0,0,0.08)':'none'}}>▤ 표</button>
+            <button onClick={()=>setView('board')} style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:6,backgroundColor:view==='board'?'#fff':'transparent',color:view==='board'?'#333':'#999',boxShadow:view==='board'?'0 1px 2px rgba(0,0,0,0.08)':'none'}}>🗂 보드</button>
           </div>
           <button onClick={onClose} style={{fontSize:18,color:'#CCC',lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color='#999'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>
         </div>
-        {/* Quick add */}
-        <div style={{padding:'12px 20px',borderBottom:'0.5px solid #F5F5F2',flexShrink:0}}>
-          <div style={{display:'flex',gap:8}}>
-            <input ref={inputRef} value={text} onChange={e=>setText(e.target.value)}
-              onKeyDown={e=>{if(e.key==='Enter')add();}}
-              placeholder="떠오른 아이디어를 빠르게 적어보세요..."
-              style={{flex:1,fontSize:14,color:'#222',borderBottom:'1.5px solid #EDEDEA',paddingBottom:5,fontWeight:500}}/>
-            <input value={tag} onChange={e=>setTag(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')add();}}
-              placeholder="카테고리(선택)" list="idea-tags"
-              style={{width:110,fontSize:12,color:'#555',borderBottom:'1.5px solid #EDEDEA',paddingBottom:5}}/>
-            <datalist id="idea-tags">{existingTags.map(t=><option key={t} value={t}/>)}</datalist>
-            <button onClick={add} style={{fontSize:12,color:'#fff',padding:'6px 14px',backgroundColor:'var(--acc)',borderRadius:6,fontWeight:600,flexShrink:0}}>추가</button>
-          </div>
-          {existingTags.length>0&&(
-            <div style={{display:'flex',gap:5,flexWrap:'wrap',marginTop:8}}>
-              {existingTags.map(t=>(
-                <button key={t} onClick={()=>setTag(t===tag?'':t)}
-                  style={{fontSize:10.5,padding:'2px 9px',borderRadius:20,fontWeight:600,
-                    border:`0.5px solid ${tag===t?tagColor(t):'#E8E8E8'}`,
-                    backgroundColor:tag===t?lighten(tagColor(t),0.85):'#F8F8F8',
-                    color:tag===t?tagColor(t):'#96969E'}}>{t}</button>
-              ))}
-            </div>
-          )}
-        </div>
         {/* Body */}
-        <div style={{flex:1,overflowY:'auto',padding:view==='board'?'14px 16px':'6px 8px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:view==='board'?'14px 16px':'4px 0'}}>
           {state.ideaNotes.length===0&&(
-            <div style={{textAlign:'center',color:'#D0D0CA',fontSize:12.5,padding:'40px 0'}}>아직 적어둔 아이디어가 없어요</div>
+            <div style={{textAlign:'center',color:'#D0D0CA',fontSize:12.5,padding:'50px 0'}}>아직 적어둔 아이디어가 없어요<br/><span style={{fontSize:11}}>위 "+ 새 아이디어"로 시작해보세요</span></div>
           )}
-          {view==='list'&&state.ideaNotes.map(n=>{
-            const c=tagColor(n.tag);
-            return(
-              <div key={n.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',borderRadius:8}}
-                onMouseEnter={e=>e.currentTarget.style.backgroundColor='#FAFAF8'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}>
-                <span style={{width:6,height:6,borderRadius:'50%',backgroundColor:c,flexShrink:0}}/>
-                {editingId===n.id?
-                  <input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit}
-                    onKeyDown={e=>{if(e.key==='Enter')commitEdit();if(e.key==='Escape')setEditingId(null);}}
-                    style={{flex:1,fontSize:13,color:'#333',borderBottom:'0.5px solid #DDD'}}/>
-                  :<span onDoubleClick={()=>startEdit(n)} style={{flex:1,fontSize:13,color:'#333',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text'}} title="더블클릭 → 수정">{n.text}</span>}
-                <span style={{fontSize:10.5,fontWeight:600,color:c,backgroundColor:lighten(c,0.88),borderRadius:10,padding:'1.5px 8px',flexShrink:0}}>{n.tag}</span>
-                <span style={{fontSize:10.5,color:'#C4C4C4',flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{fmtTime(n.createdAt)}</span>
-                <button onClick={()=>dispatch({type:'DELETE_IDEA',id:n.id})} style={{fontSize:13,color:'#DADADA',flexShrink:0}}
-                  onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#DADADA'}>×</button>
-              </div>
-            );
-          })}
+          {view==='table'&&state.ideaNotes.length>0&&(
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr style={{borderBottom:'0.5px solid #EEEEF0'}}>
+                  <th style={{textAlign:'left',fontSize:10.5,color:'#B0B0B6',fontWeight:600,padding:'6px 20px'}}>제목</th>
+                  <th style={{textAlign:'left',fontSize:10.5,color:'#B0B0B6',fontWeight:600,padding:'6px 10px',width:110}}>카테고리</th>
+                  <th style={{textAlign:'left',fontSize:10.5,color:'#B0B0B6',fontWeight:600,padding:'6px 10px',width:60}}>날짜</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.ideaNotes.map(n=>{
+                  const c=tagColor(n.tag);
+                  return(
+                    <tr key={n.id} onClick={()=>setOpenPage(n)} style={{cursor:'pointer',borderBottom:'0.5px solid #F5F5F2'}}
+                      onMouseEnter={e=>e.currentTarget.style.backgroundColor='#FAFAF8'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}>
+                      <td style={{padding:'9px 20px',minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:'#2C2C2E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.title||'(제목 없음)'}</div>
+                        <div style={{fontSize:11,color:'#B0B0B6',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:400}}>{previewOf(n)}</div>
+                      </td>
+                      <td style={{padding:'9px 10px'}}><span style={{fontSize:10.5,fontWeight:600,color:c,backgroundColor:lighten(c,0.88),borderRadius:10,padding:'1.5px 8px'}}>{n.tag||'미분류'}</span></td>
+                      <td style={{padding:'9px 10px',fontSize:11,color:'#B0B0B6',fontVariantNumeric:'tabular-nums'}}>{fmtDate(n.createdAt)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
           {view==='board'&&(
             <div style={{display:'flex',gap:14,overflowX:'auto',height:'100%',paddingBottom:6}}>
               {grouped.map(([tg,items])=>{
                 const c=tagColor(tg);
                 return(
-                  <div key={tg} style={{minWidth:180,width:180,flexShrink:0,display:'flex',flexDirection:'column'}}>
+                  <div key={tg} style={{minWidth:190,width:190,flexShrink:0,display:'flex',flexDirection:'column'}}>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,paddingBottom:6,borderBottom:`2px solid ${c}`}}>
                       <span style={{width:7,height:7,borderRadius:'50%',backgroundColor:c,flexShrink:0}}/>
                       <span style={{fontSize:12,fontWeight:700,color:'#333',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tg}</span>
@@ -1774,17 +1823,11 @@ function IdeaBoardModal({onClose}){
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:6,overflowY:'auto'}}>
                       {items.map(n=>(
-                        <div key={n.id} style={{backgroundColor:lighten(c,0.92),border:`0.5px solid ${lighten(c,0.7)}`,borderRadius:8,padding:'8px 10px',position:'relative'}}>
-                          {editingId===n.id?
-                            <input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit}
-                              onKeyDown={e=>{if(e.key==='Enter')commitEdit();if(e.key==='Escape')setEditingId(null);}}
-                              style={{width:'100%',fontSize:12,color:'#333',backgroundColor:'transparent',border:'none'}}/>
-                            :<div onDoubleClick={()=>startEdit(n)} style={{fontSize:12,color:'#333',lineHeight:1.4,wordBreak:'break-word',cursor:'text'}} title="더블클릭 → 수정">{n.text}</div>}
-                          <div style={{display:'flex',justifyContent:'space-between',marginTop:5}}>
-                            <span style={{fontSize:9.5,color:'#B0B0B6'}}>{fmtTime(n.createdAt)}</span>
-                            <button onClick={()=>dispatch({type:'DELETE_IDEA',id:n.id})} style={{fontSize:11,color:'#C4C4C4'}}
-                              onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#C4C4C4'}>×</button>
-                          </div>
+                        <div key={n.id} onClick={()=>setOpenPage(n)} style={{backgroundColor:lighten(c,0.92),border:`0.5px solid ${lighten(c,0.7)}`,borderRadius:8,padding:'9px 11px',cursor:'pointer'}}
+                          onMouseEnter={e=>e.currentTarget.style.boxShadow='0 2px 6px rgba(0,0,0,0.06)'} onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+                          <div style={{fontSize:12.5,fontWeight:700,color:'#2C2C2E',marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.title||'(제목 없음)'}</div>
+                          <div style={{fontSize:11,color:'#666',lineHeight:1.4,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{previewOf(n)}</div>
+                          <div style={{fontSize:9.5,color:'#B0B0B6',marginTop:5}}>{fmtDate(n.createdAt)}</div>
                         </div>
                       ))}
                     </div>
@@ -1795,6 +1838,7 @@ function IdeaBoardModal({onClose}){
           )}
         </div>
       </div>
+      {openPage&&<IdeaPageModal initialNote={openPage?.id?openPage:null} onClose={()=>setOpenPage(null)}/>}
     </div>
   );
 }
@@ -2641,7 +2685,7 @@ function MemoItem({memo,projectId,projectColor,memoIdx,memoCount,dispatch}){
   );
 }
 // ─── LEFT PANEL: 주간 일정 (오늘부터 7일, 같은 날 안에서 드래그 순서변경) ──
-function AgendaEventRow({ev,dateKey,dragId,overId,onDragStart,onDragEnd,onDragOver,onDrop,catStyle}){
+function AgendaEventRow({ev,catLabel,dragId,overId,onDragStart,onDragEnd,onDragOver,onDrop,catStyle}){
   const[hover,setHover]=useState(false);
   const[detail,setDetail]=useState(false);
   const cs=catStyle[ev.category]||catStyle.work;
@@ -2656,17 +2700,23 @@ function AgendaEventRow({ev,dateKey,dragId,overId,onDragStart,onDragEnd,onDragOv
       onDrop={e=>{e.preventDefault();onDrop(ev.id);}}
       onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
       onClick={()=>setDetail(true)}
-      style={{position:'relative',display:'flex',alignItems:'center',gap:5,padding:'2.5px 0',cursor:'pointer',opacity:isDragging?0.4:1}}>
-      {isOver&&<div style={{position:'absolute',top:-1,left:12,right:0,height:2,backgroundColor:dot,borderRadius:1}}/>}
-      <span title="드래그해서 순서 변경" style={{fontSize:11,color:hover?'#C8C8C8':'transparent',cursor:'grab',flexShrink:0,lineHeight:1,userSelect:'none'}}>⠿</span>
-      <span style={{width:5,height:5,borderRadius:'50%',backgroundColor:dot,flexShrink:0}}/>
-      {ev.time&&<span style={{fontSize:10.5,color:'#A8A8AE',flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{ev.time}</span>}
-      <span style={{fontSize:12,color:'#4A4A50',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1,minWidth:0}}>{ev.title}</span>
+      style={{position:'relative',display:'flex',cursor:'pointer',opacity:isDragging?0.4:1,marginBottom:4}}>
+      {isOver&&<div style={{position:'absolute',top:-3,left:14,right:0,height:2,backgroundColor:dot,borderRadius:1}}/>}
+      <span title="드래그해서 순서 변경" style={{fontSize:10,color:hover?'#C8C8C8':'transparent',cursor:'grab',flexShrink:0,lineHeight:1,userSelect:'none',width:12,textAlign:'center',paddingTop:6}}>⠿</span>
+      <div style={{display:'flex',flex:1,minWidth:0,backgroundColor:'#fff',borderRadius:6,overflow:'hidden',border:'0.5px solid #EDEDEA'}}
+        onMouseEnter={e=>e.currentTarget.style.boxShadow='0 1px 5px rgba(0,0,0,0.06)'} onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+        <div style={{width:3,flexShrink:0,backgroundColor:dot}}/>
+        <div style={{padding:'4px 7px',flex:1,minWidth:0}}>
+          <div style={{fontSize:7,fontWeight:700,letterSpacing:'0.3px',textTransform:'uppercase',color:cs.text}}>{catLabel(ev.category)}</div>
+          <div style={{fontSize:10.5,fontWeight:600,color:'#2C2C2E',lineHeight:1.25,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ev.title}</div>
+          <div style={{fontSize:9,fontWeight:700,color:'#8A8A86',marginTop:1}}>{ev.time||'종일'}{ev.location?' · 📍'+ev.location:''}</div>
+        </div>
+      </div>
       {detail&&<EventDetailPopover event={ev} onClose={()=>setDetail(false)}/>}
     </div>
   );
 }
-function AgendaDayGroup({dateKey,events,label,isToday,catStyle}){
+function AgendaDayGroup({dateKey,events,label,isToday,catStyle,catLabel}){
   const{dispatch}=useStore();
   const[dragId,setDragId]=useState(null);
   const[overId,setOverId]=useState(null);
@@ -2678,11 +2728,11 @@ function AgendaDayGroup({dateKey,events,label,isToday,catStyle}){
     setDragId(null);setOverId(null);
   };
   return(
-    <div style={{marginBottom:6}}>
-      <div style={{fontSize:10.5,fontWeight:700,color:isToday?'var(--acc)':'#B0B0B6',marginBottom:1,letterSpacing:'0.2px'}}>{label}</div>
+    <div style={{marginBottom:8}}>
+      <div style={{fontSize:10.5,fontWeight:700,color:isToday?'var(--acc)':'#B0B0B6',marginBottom:3,letterSpacing:'0.2px'}}>{label}</div>
       {events.length===0
         ?<div style={{fontSize:11,color:'#D5D5D8',paddingLeft:16}}>일정 없음</div>
-        :events.map(ev=><AgendaEventRow key={ev.id} ev={ev} dateKey={dateKey} dragId={dragId} overId={overId}
+        :events.map(ev=><AgendaEventRow key={ev.id} ev={ev} catLabel={catLabel} dragId={dragId} overId={overId}
             onDragStart={setDragId} onDragEnd={()=>{setDragId(null);setOverId(null);}}
             onDragOver={setOverId} onDrop={onDrop} catStyle={catStyle}/>)}
     </div>
@@ -2721,12 +2771,18 @@ function WeeklyAgenda(){
     return arr;
   },[state.weeklyEvents,state.leftAgendaOrder,state.workVisible,state.personalVisible,state.outlookVisible,state.customLayers,projById]);
   const visibleDays=days.filter((d,i)=>i===0||d.evs.length>0);
+  const catLabel=(cat)=>{
+    if(cat==='work')return state.workLabel||'업무';
+    if(cat==='personal')return state.personalLabel||'개인';
+    if(cat==='outlook')return '아웃룩';
+    const cl=(state.customLayers||[]).find(l=>l.id===cat);return cl?.name||cat;
+  };
   return(
     <div style={{marginBottom:16,paddingBottom:10,borderBottom:'0.5px solid #EEEEF1'}}>
       <div style={{marginBottom:6}}>
         <span style={{fontSize:11,color:'#7BA88B',letterSpacing:'1px',textTransform:'uppercase',fontWeight:700}}>주간 일정</span>
       </div>
-      {visibleDays.map(d=><AgendaDayGroup key={d.k} dateKey={d.k} events={d.evs} label={d.label} isToday={d.isToday} catStyle={catStyle}/>)}
+      {visibleDays.map(d=><AgendaDayGroup key={d.k} dateKey={d.k} events={d.evs} label={d.label} isToday={d.isToday} catStyle={catStyle} catLabel={catLabel}/>)}
     </div>
   );
 }
@@ -3259,6 +3315,73 @@ function TblCell({value,onChange,header,minH}){
       color:'#333',backgroundColor:'transparent',boxSizing:'border-box',fontFamily:'inherit',resize:'none',
       overflow:'hidden',lineHeight:1.45,whiteSpace:'pre-wrap',wordBreak:'break-word',display:'block',margin:0}}/>;
 }
+function DrawingBlock({block,updateBlock,onFocusCb}){
+  const canvasRef=useRef(null);
+  const wrapRef=useRef(null);
+  const drawingRef=useRef(false);
+  const lastRef=useRef({x:0,y:0});
+  const[color,setColor]=useState('#2C2C2E');
+  const[width,setWidth]=useState(3);
+  const CANVAS_W=560,CANVAS_H=220;
+  useEffect(()=>{
+    const cv=canvasRef.current;if(!cv)return;
+    cv.width=CANVAS_W;cv.height=CANVAS_H;
+    const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+    if(block.img){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,CANVAS_W,CANVAS_H);img.src=block.img;}
+  },[]);
+  const getPos=(e)=>{
+    const cv=canvasRef.current;const rect=cv.getBoundingClientRect();
+    const cx=(e.touches?e.touches[0].clientX:e.clientX);
+    const cy=(e.touches?e.touches[0].clientY:e.clientY);
+    return{x:(cx-rect.left)*(CANVAS_W/rect.width),y:(cy-rect.top)*(CANVAS_H/rect.height)};
+  };
+  const start=(e)=>{e.preventDefault();onFocusCb(block.id);drawingRef.current=true;lastRef.current=getPos(e);};
+  const move=(e)=>{
+    if(!drawingRef.current)return;e.preventDefault();
+    const cv=canvasRef.current;const ctx=cv.getContext('2d');
+    const p=getPos(e);
+    ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.beginPath();ctx.moveTo(lastRef.current.x,lastRef.current.y);ctx.lineTo(p.x,p.y);ctx.stroke();
+    lastRef.current=p;
+  };
+  const end=()=>{
+    if(!drawingRef.current)return;drawingRef.current=false;
+    const cv=canvasRef.current;if(cv)updateBlock(block.id,{img:cv.toDataURL('image/png')});
+  };
+  const clearCanvas=()=>{
+    const cv=canvasRef.current;const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+    updateBlock(block.id,{img:''});
+  };
+  const COLORS=['#2C2C2E','#E24B4A','#2563EB','#1D9E75','#D97706','#9333EA'];
+  return(
+    <div ref={wrapRef} style={{margin:'6px 0',border:'0.5px solid #E5E5E2',borderRadius:8,overflow:'hidden',backgroundColor:'#fff'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 8px',backgroundColor:'#F7F7F5',borderBottom:'0.5px solid #ECECE8'}}>
+        <span style={{fontSize:10.5,color:'#B0B0AA',fontWeight:600,marginRight:4}}>✏ 그림</span>
+        {COLORS.map(c=>(
+          <div key={c} onClick={()=>setColor(c)} style={{width:14,height:14,borderRadius:'50%',backgroundColor:c,cursor:'pointer',
+            boxShadow:color===c?`0 0 0 2px #fff, 0 0 0 3.5px ${c}`:'none',flexShrink:0}}/>
+        ))}
+        <div style={{width:1,height:14,backgroundColor:'#E0E0DC',margin:'0 4px'}}/>
+        {[2,4,7].map(w=>(
+          <div key={w} onClick={()=>setWidth(w)} style={{width:22,height:22,borderRadius:5,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',
+            backgroundColor:width===w?'var(--acc-bg)':'transparent'}}>
+            <span style={{width:w+2,height:w+2,borderRadius:'50%',backgroundColor:width===w?'var(--acc)':'#B0B0AA'}}/>
+          </div>
+        ))}
+        <div style={{flex:1}}/>
+        <button onClick={clearCanvas} style={{fontSize:10.5,color:'#B0B0AA',padding:'2px 8px',borderRadius:5,border:'0.5px solid #E0E0DC'}}
+          onMouseEnter={e=>{e.currentTarget.style.color='#E24B4A';e.currentTarget.style.borderColor='#F5C6C5';}}
+          onMouseLeave={e=>{e.currentTarget.style.color='#B0B0AA';e.currentTarget.style.borderColor='#E0E0DC';}}>지우기</button>
+      </div>
+      <canvas ref={canvasRef}
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+        style={{width:'100%',height:220,display:'block',cursor:'crosshair',touchAction:'none'}}/>
+    </div>
+  );
+}
 function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onTabKey,onArrowNav,onPasteLines,onFocusCb,editingRef,checkSel,TYPES,bulletMark,numMark}){
   const divRef=React.useRef(null);
   const tblRef=React.useRef(null);
@@ -3296,6 +3419,9 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
           dangerouslySetInnerHTML={{__html:block.html||''}}/>
       </div>
     );
+  }
+  if(block.type==='drawing'){
+    return <DrawingBlock block={block} updateBlock={updateBlock} onFocusCb={onFocusCb}/>;
   }
   if(block.type==='table'){
     const rows=(block.rows&&block.rows.length)?block.rows:[['',''],['','']];
@@ -3468,6 +3594,7 @@ function BlockEditor({blocks,onBlocksChange}){
     {id:'todo',label:'☑',fs:13,fw:400,ph:'할 일'},
     {id:'check',label:'☐',fs:13,fw:400,ph:'체크리스트'},
     {id:'table',label:'⊞',fs:13,fw:400,ph:''},
+    {id:'drawing',label:'✏',fs:13,fw:400,ph:''},
   ];
   const focusedBlock=blocks.find(b=>b.id===focusedId)||blocks[0];
   const activeType=TYPES.find(t=>t.id===focusedBlock?.type)||TYPES[3];
@@ -3566,9 +3693,10 @@ function BlockEditor({blocks,onBlocksChange}){
         {TYPES.map(t=>(
           <button key={t.id}
             onMouseDown={e=>{e.preventDefault();const id=focusedId||(blocks[0]?.id);if(!id)return;const cur=blocks.find(b=>b.id===id);
-              if(cur&&cur.type==='table'&&t.id!=='table'){const nb={id:uid(),type:t.id,text:'',html:'',indent:0,checked:false};const idx=blocks.findIndex(b=>b.id===id);const arr=blocks.slice();arr.splice(idx+1,0,nb);onBlocksChange(arr);focusBlock(nb.id,'start');return;}
-              const nt=cur?.type===t.id?'p':t.id;const upd={type:nt};if(nt==='table'&&!(cur&&cur.rows&&cur.rows.length))upd.rows=[['','',''],['','','']];updateBlock(id,upd);}}
-            title={{h1:'제목 1',h2:'제목 2',h3:'제목 3',p:'텍스트',bullet:'글머리 기호',numbered:'번호 매기기',todo:'할 일',table:'표 (2행 3열로 시작)'}[t.id]}
+              const special=['table','drawing'];
+              if(cur&&special.includes(cur.type)&&t.id!==cur.type){const nb={id:uid(),type:t.id,text:'',html:'',indent:0,checked:false};const idx=blocks.findIndex(b=>b.id===id);const arr=blocks.slice();arr.splice(idx+1,0,nb);onBlocksChange(arr);focusBlock(nb.id,'start');return;}
+              const nt=cur?.type===t.id?'p':t.id;const upd={type:nt};if(nt==='table'&&!(cur&&cur.rows&&cur.rows.length))upd.rows=[['','',''],['','','']];if(nt==='drawing'&&cur?.img===undefined)upd.img='';updateBlock(id,upd);}}
+            title={{h1:'제목 1',h2:'제목 2',h3:'제목 3',p:'텍스트',bullet:'글머리 기호',numbered:'번호 매기기',todo:'할 일',table:'표 (2행 3열로 시작)',drawing:'그림 그리기'}[t.id]}
             style={{padding:'3px 9px',borderRadius:6,fontSize:11,fontWeight:600,
               border:`0.5px solid ${activeType.id===t.id?'var(--acc-brd)':'transparent'}`,
               backgroundColor:activeType.id===t.id?'var(--acc-bg)':'transparent',
@@ -4561,10 +4689,16 @@ function WeeklyDayRow({date}){
 function WeeklySection(){
   const{state,dispatch}=useStore();
   const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,calendarScrollRef,isMobile}=useLayout();
-  const weekDates=getWeekDates(state.weekOffset);
+  const chronoDates=getWeekDates(state.weekOffset);
+  let weekDates=chronoDates;
+  if(state.weekOffset===0){
+    const todayKey=toDateKey(new Date());
+    const idx=chronoDates.findIndex(d=>toDateKey(d)===todayKey);
+    if(idx>0)weekDates=[...chronoDates.slice(idx),...chronoDates.slice(0,idx)];
+  }
   return(
     <section style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,backgroundColor:'#FAFAF7',position:'relative'}}>
-      <WeeklyHeader weekDates={weekDates}
+      <WeeklyHeader weekDates={chronoDates}
         onPrev={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset-1})}
         onNext={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset+1})}
         onToday={()=>dispatch({type:'SET_WEEK_OFFSET',payload:0})}/>
