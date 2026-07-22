@@ -100,6 +100,20 @@ const tagColor=(tag)=>{
   let h=0;for(let i=0;i<(tag||'').length;i++)h=(h*31+tag.charCodeAt(i))>>>0;
   return PROJECT_COLORS[h%PROJECT_COLORS.length];
 };
+// 큐레이션 데이터 — 정적 시드. 자동 갱신 불가(정적 사이트라 서버/크론 없음): 매달 Claude에게 새로고침 요청 필요.
+const EXHIBITION_DATA_MONTH='2026-07';
+const EXHIBITION_PICKS=[
+  {title:'유영국: 산은 내 안에 있다',venue:'서울시립미술관 서소문본관',period:'5.19 – 10.25',tag:'회화',
+    blurb:'한국 추상미술의 거장 유영국을 조명하는 역대 최대 규모 회고전.'},
+  {title:'마틴 파: We Are Martin Parr',venue:'서울시립 사진미술관',period:'7.16 – 10.18',tag:'디자인',
+    blurb:'영국 사진작가 마틴 파의 초기작부터 최근작까지, 전관 규모로 선보이는 회고전.'},
+  {title:'알렉스 카츠 〈Studies〉',venue:'타데우스 로팍 서울',period:'5.22 – 8.1',tag:'회화',
+    blurb:'미국 현대 회화의 거장 알렉스 카츠의 신작 연구 시리즈 — 곧 종료되니 서두르는 게 좋아요.'},
+  {title:'고야: 이성이 잠들 때, 괴물이 깨어난다',venue:'예술의전당 한가람미술관',period:'~ 9.30',tag:'회화',
+    blurb:'스페인 거장 프란시스코 고야의 판화·회화를 만나는 대규모 전시.'},
+  {title:'이정윤: 노래하는 집',venue:'김중업 건축문화의 집(성북구)',period:'4.17 – 11.21',tag:'건축',
+    blurb:'건축가 김중업의 공간을 동시대 설치미술로 재해석. 화~토 운영·무료입장(8월 휴관).'},
+];
 const FONT_OPTIONS = [
   {id:'pretendard',label:'Pretendard',css:"'Pretendard Variable',Pretendard,'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
   {id:'notosans',label:'Noto Sans KR',css:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
@@ -224,6 +238,7 @@ const initialState={
   titleFontSize:lsLoad('titleFontSize',21),titleFontFamily:lsLoad('titleFontFamily','inherit'),appFont:lsLoad('appFont','pretendard'),
   leftAgendaOrder:lsLoad('leftAgendaOrder',{}),
   ideaNotes:lsLoad('ideaNotes',[]).map(n=>n.blocks?n:{id:n.id,title:n.text||'',tag:n.tag||'미분류',createdAt:n.createdAt,updatedAt:n.createdAt,blocks:[{id:uid(),type:'p',text:n.text||'',html:(n.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),indent:0,checked:false}]}),
+  exhibitionWishlist:lsLoad('exhibitionWishlist',[]),
   themeAccent:lsLoad('themeAccent','#B79C7A'),panelBg:lsLoad('panelBg',''),panelImg:lsLoad('panelImg',''),weeklyBg:lsLoad('weeklyBg',''),monthlyBg:lsLoad('monthlyBg',''),
   outlookVisible:lsLoad('outlookVisible',true),outlookColor:lsLoad('outlookColor','#BA7517'),
   customLayers:lsLoad('customLayers',[]),
@@ -309,6 +324,9 @@ function reducer(state,action){
     case 'ADD_IDEA_PAGE':return{...state,ideaNotes:[action.note,...state.ideaNotes]};
     case 'UPDATE_IDEA_PAGE':return{...state,ideaNotes:state.ideaNotes.map(n=>n.id===action.id?{...n,...action.updates}:n)};
     case 'DELETE_IDEA':return{...state,ideaNotes:state.ideaNotes.filter(n=>n.id!==action.id)};
+    case 'ADD_EXWISH':return{...state,exhibitionWishlist:[{id:uid(),title:action.title,venue:action.venue||'',date:action.date||'',note:action.note||'',createdAt:new Date().toISOString()},...state.exhibitionWishlist]};
+    case 'UPDATE_EXWISH':return{...state,exhibitionWishlist:state.exhibitionWishlist.map(w=>w.id===action.id?{...w,...action.updates}:w)};
+    case 'DELETE_EXWISH':return{...state,exhibitionWishlist:state.exhibitionWishlist.filter(w=>w.id!==action.id)};
     case 'SET_THEME':return{...state,[action.key]:action.value};
     case 'SET_ICAL_FEEDS':return{...state,icalFeeds:action.feeds};
     case 'ICAL_IMPORT':{
@@ -1842,6 +1860,107 @@ function IdeaBoardModal({onClose}){
     </div>
   );
 }
+function ExhibitionModal({onClose}){
+  const{state,dispatch}=useStore();
+  const showToast=useToast();
+  const[title,setTitle]=useState('');
+  const[venue,setVenue]=useState('');
+  const[date,setDate]=useState('');
+  const[editingId,setEditingId]=useState(null);
+  const[editVal,setEditVal]=useState('');
+  useEffect(()=>{const h=(e)=>{if(e.key==='Escape')onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
+  const monthsSince=(()=>{
+    const[y,m]=EXHIBITION_DATA_MONTH.split('-').map(Number);
+    const now=new Date();
+    return (now.getFullYear()-y)*12+(now.getMonth()+1-m);
+  })();
+  const add=()=>{
+    const t=title.trim();if(!t)return;
+    dispatch({type:'ADD_EXWISH',title:t,venue:venue.trim(),date});
+    setTitle('');setVenue('');setDate('');
+  };
+  const addToSchedule=(w)=>{
+    const d=w.date||toDateKey(new Date());
+    dispatch({type:'ADD_EVENT',event:{date:d,title:w.title,category:'personal',location:w.venue||''}});
+    showToast('일정에 추가했어요','success');
+  };
+  const startEdit=(w)=>{setEditingId(w.id);setEditVal(w.title);};
+  const commitEdit=()=>{const t=editVal.trim();if(t)dispatch({type:'UPDATE_EXWISH',id:editingId,updates:{title:t}});setEditingId(null);};
+  return(
+    <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.32)',zIndex:8500,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
+      <div style={{width:640,maxWidth:'94vw',maxHeight:'86vh',minHeight:380,backgroundColor:'#fff',borderRadius:14,
+        boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',
+        display:'flex',flexDirection:'column',overflow:'hidden',animation:'popIn 0.16s ease'}}>
+        <div style={{padding:'16px 20px 12px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0,display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:16,fontWeight:700}}>🖼 전시 정보</span>
+          <span style={{fontSize:11,color:'#B0B0B6'}}>디자인·건축·인테리어·회화 위주</span>
+          <span style={{flex:1}}/>
+          <button onClick={onClose} style={{fontSize:18,color:'#CCC',lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color='#999'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
+          {/* 큐레이션 TOP5 */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:700,color:'var(--acc)',letterSpacing:'0.3px'}}>요즘 화제의 전시 TOP 5</span>
+            <span style={{fontSize:10,color:'#C4C4C4'}}>{EXHIBITION_DATA_MONTH.replace('-','.')} 기준</span>
+            {monthsSince>=2&&<span style={{fontSize:10,color:'#E24B4A',backgroundColor:'#FFF0EF',borderRadius:8,padding:'1px 7px'}}>정보가 {monthsSince}개월 전 것이에요 — Claude에게 "전시 정보 새로고침해줘"라고 요청해보세요</span>}
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:18}}>
+            {EXHIBITION_PICKS.map((p,i)=>{
+              const c=tagColor(p.tag);
+              return(
+                <div key={i} style={{display:'flex',gap:10,padding:'9px 11px',borderRadius:9,border:'0.5px solid #EDEDEA',backgroundColor:'#FAFAF8'}}>
+                  <div style={{width:3,flexShrink:0,borderRadius:2,backgroundColor:c}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                      <span style={{fontSize:13,fontWeight:700,color:'#2C2C2E'}}>{p.title}</span>
+                      <span style={{fontSize:9.5,fontWeight:600,color:c,backgroundColor:lighten(c,0.86),borderRadius:9,padding:'1px 7px',flexShrink:0}}>{p.tag}</span>
+                    </div>
+                    <div style={{fontSize:11,color:'#8A8A86',marginBottom:3}}>{p.venue} · {p.period}</div>
+                    <div style={{fontSize:11.5,color:'#555',lineHeight:1.4}}>{p.blurb}</div>
+                  </div>
+                  <button onClick={()=>{dispatch({type:'ADD_EXWISH',title:p.title,venue:p.venue,date:''});}}
+                    title="가고싶은 전시에 담기" style={{fontSize:11,color:'var(--acc)',padding:'4px 10px',borderRadius:6,backgroundColor:'var(--acc-bg)',flexShrink:0,alignSelf:'flex-start',height:'fit-content'}}>+ 담기</button>
+                </div>
+              );
+            })}
+          </div>
+          {/* 내 위시리스트 */}
+          <div style={{fontSize:11,fontWeight:700,color:'#7BA88B',letterSpacing:'0.3px',marginBottom:8}}>내가 가고싶은 전시</div>
+          <div style={{display:'flex',gap:6,marginBottom:10}}>
+            <input value={title} onChange={e=>setTitle(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')add();}}
+              placeholder="전시명" style={{flex:1.4,fontSize:12.5,borderBottom:'1.5px solid #EDEDEA',paddingBottom:4}}/>
+            <input value={venue} onChange={e=>setVenue(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')add();}}
+              placeholder="장소(선택)" style={{flex:1,fontSize:12,borderBottom:'1.5px solid #EDEDEA',paddingBottom:4}}/>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+              style={{fontSize:11.5,color:'#555',borderBottom:'1.5px solid #EDEDEA',paddingBottom:4,width:118}}/>
+            <button onClick={add} style={{fontSize:12,color:'#fff',padding:'5px 12px',backgroundColor:'var(--acc)',borderRadius:6,fontWeight:600,flexShrink:0}}>추가</button>
+          </div>
+          {state.exhibitionWishlist.length===0&&<div style={{fontSize:11.5,color:'#D0D0CA',padding:'8px 0'}}>아직 담아둔 전시가 없어요</div>}
+          <div style={{display:'flex',flexDirection:'column',gap:1}}>
+            {state.exhibitionWishlist.map(w=>(
+              <div key={w.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',borderRadius:7}}
+                onMouseEnter={e=>e.currentTarget.style.backgroundColor='#FAFAF8'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}>
+                <span style={{width:5,height:5,borderRadius:'50%',backgroundColor:'#B79C7A',flexShrink:0}}/>
+                {editingId===w.id?
+                  <input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit}
+                    onKeyDown={e=>{if(e.key==='Enter')commitEdit();if(e.key==='Escape')setEditingId(null);}}
+                    style={{flex:1,fontSize:12.5,borderBottom:'0.5px solid #DDD'}}/>
+                  :<span onDoubleClick={()=>startEdit(w)} style={{flex:1,fontSize:12.5,color:'#333',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text'}} title="더블클릭 → 수정">
+                    {w.title}{w.venue?<span style={{color:'#B0B0B6'}}> · {w.venue}</span>:null}
+                  </span>}
+                <input type="date" value={w.date||''} onChange={e=>dispatch({type:'UPDATE_EXWISH',id:w.id,updates:{date:e.target.value}})}
+                  style={{fontSize:10.5,color:'#8A8A86',width:104,flexShrink:0}}/>
+                <button onClick={()=>addToSchedule(w)} title="일정에 추가" style={{fontSize:10.5,fontWeight:600,color:'var(--acc)',padding:'3px 9px',borderRadius:6,backgroundColor:'var(--acc-bg)',flexShrink:0}}>📅 일정추가</button>
+                <button onClick={()=>dispatch({type:'DELETE_EXWISH',id:w.id})} style={{fontSize:13,color:'#DADADA',flexShrink:0}}
+                  onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#DADADA'}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function ProjectPickerPopover({selectedProjectId,onSelect,onClose,style={}}){
   const{state}=useStore();const ref=useRef(null);
   useEffect(()=>{const h=(e)=>{if(ref.current&&!ref.current.contains(e.target))onClose();};setTimeout(()=>document.addEventListener('mousedown',h),0);return()=>document.removeEventListener('mousedown',h);},[onClose]);
@@ -2194,6 +2313,7 @@ function TopBar(){
   const catStyle=useDynCatStyle();
   const[settingsOpen,setSettingsOpen]=useState(false);
   const[ideaOpen,setIdeaOpen]=useState(false);
+  const[exhibitionOpen,setExhibitionOpen]=useState(false);
   const showToast=useToast();
   const[olSyncing,setOlSyncing]=useState(false);
   const doQuickSync=async()=>{
@@ -2358,6 +2478,9 @@ function TopBar(){
       {_mob&&<button onClick={()=>setIdeaOpen(true)} title="아이디어 노트"
         style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:'50%',
           fontSize:16,backgroundColor:'#F7F7F7',border:'0.5px solid #E8E8E8',flexShrink:0,marginRight:2}}>💡</button>}
+      {_mob&&<button onClick={()=>setExhibitionOpen(true)} title="전시 정보"
+        style={{display:'flex',alignItems:'center',justifyContent:'center',width:32,height:32,borderRadius:'50%',
+          fontSize:16,backgroundColor:'#F7F7F7',border:'0.5px solid #E8E8E8',flexShrink:0,marginRight:2}}>🖼</button>}
       {/* Layer chips row — unified, all draggable */}
       <div style={{display:_mob?'none':'flex',alignItems:'center',gap:6,overflowX:'auto',flexShrink:1}}>
         {(()=>{
@@ -2505,6 +2628,15 @@ function TopBar(){
           💡 아이디어
         </button>
         <div style={{width:'0.5px',height:14,backgroundColor:'#E8E8E8',margin:'0 2px',flexShrink:0}}/>
+        <button onClick={()=>setExhibitionOpen(true)}
+          style={{display:'flex',alignItems:'center',gap:5,padding:'3px 11px',borderRadius:20,fontSize:12,fontWeight:500,
+            border:'0.5px solid #DEDEDE',backgroundColor:'#F7F7F7',color:'#96969E',transition:'all 0.15s',flexShrink:0}}
+          title="요즘 갈만한 전시 + 가고싶은 전시 목록"
+          onMouseEnter={e=>{e.currentTarget.style.color='var(--acc)';e.currentTarget.style.borderColor='var(--acc-brd)';e.currentTarget.style.backgroundColor='var(--acc-bg)';}}
+          onMouseLeave={e=>{e.currentTarget.style.color='#96969E';e.currentTarget.style.borderColor='#DEDEDE';e.currentTarget.style.backgroundColor='#F7F7F7';}}>
+          🖼 전시
+        </button>
+        <div style={{width:'0.5px',height:14,backgroundColor:'#E8E8E8',margin:'0 2px',flexShrink:0}}/>
         <button onClick={()=>{const nv=!freeLayerVisible;setFreeLayerVisible(nv);if(!nv)setStickerMode(false);}}
           style={{display:'flex',alignItems:'center',gap:5,padding:'3px 11px',borderRadius:20,fontSize:12,
             fontWeight:freeLayerVisible?600:400,
@@ -2533,6 +2665,7 @@ function TopBar(){
     )}
     {settingsOpen&&<SettingsModal onClose={()=>setSettingsOpen(false)}/>}
     {ideaOpen&&<IdeaBoardModal onClose={()=>setIdeaOpen(false)}/>}
+    {exhibitionOpen&&<ExhibitionModal onClose={()=>setExhibitionOpen(false)}/>}
     </>
   );
 }
