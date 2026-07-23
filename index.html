@@ -5172,6 +5172,7 @@ function TodayTasksPanel({dateKey,height,onResize}){
   const[val,setVal]=useState('');
   const[cat,setCat]=useState('work');
   const inputRef=useRef(null);
+  const panelRef=useRef(null);
   const todos=(state.todos||[]).filter(t=>{
     if(t.date!==dateKey)return false;
     if(t.category==='work')return state.workVisible;
@@ -5185,16 +5186,19 @@ function TodayTasksPanel({dateKey,height,onResize}){
   const label=isToday_?'오늘의 할 일':`${d.getMonth()+1}/${d.getDate()} ${dowKr[d.getDay()]} 할 일`;
   const onResizeMouseDown=React.useCallback((e)=>{
     e.preventDefault();
-    const startY=e.clientY,startH=height;
-    const onMove=(ev)=>{const nh=Math.max(60,Math.min(420,startH-(ev.clientY-startY)));onResize(nh);};
+    const startY=e.clientY;
+    const startH=height!=null?height:(panelRef.current?panelRef.current.getBoundingClientRect().height:168);
+    const onMove=(ev)=>{const nh=Math.max(60,Math.min(560,startH-(ev.clientY-startY)));onResize(nh);};
     const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
     document.addEventListener('mousemove',onMove);
     document.addEventListener('mouseup',onUp);
   },[height,onResize]);
   return(
-    <div style={{flexShrink:0,borderTop:'0.5px solid #EBEBEB',backgroundColor:'#fff',height,overflowY:'auto',position:'relative'}}>
+    <div ref={panelRef} style={{
+        ...(height!=null?{flex:'0 0 auto',height}:{flex:'1 1 auto',minHeight:60}),
+        borderTop:'0.5px solid #EBEBEB',backgroundColor:'#fff',overflowY:'auto',position:'relative'}}>
       <div onMouseDown={onResizeMouseDown} title="드래그해서 높이 조절"
-        style={{position:'absolute',top:-3,left:0,right:0,height:6,cursor:'row-resize',zIndex:5,display:'flex',alignItems:'center',justifyContent:'center'}}
+        style={{position:'sticky',top:0,left:0,right:0,height:7,cursor:'row-resize',zIndex:5,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:-7,backgroundColor:'#fff'}}
         onMouseEnter={e=>e.currentTarget.firstChild.style.backgroundColor='var(--acc-brd)'}
         onMouseLeave={e=>e.currentTarget.firstChild.style.backgroundColor='#E2E2DC'}>
         <span style={{width:32,height:3,borderRadius:2,backgroundColor:'#E2E2DC',transition:'background-color 0.15s'}}/>
@@ -5237,7 +5241,7 @@ function CalendarSection(){
   const[navYear,setNavYear]=useState(today_.getFullYear());
   const[navMonth,setNavMonth]=useState(today_.getMonth());
   const[selDay,setSelDay]=useState(toDateKey(today_));
-  const[taskPanelH,setTaskPanelH]=useState(168);
+  const[taskPanelH,setTaskPanelH]=useState(null); // null = 자동(남는 공간 채움), 드래그하면 고정값으로 전환
 
   // Generate flat list of all weeks (-13..+13 months from today)
   const allWeeks=useMemo(()=>{
@@ -5363,15 +5367,17 @@ function CalendarSection(){
         const first=new Date(navYear,navMonth,1);
         const startOffset=first.getDay(); // 0=Sun
         const gridStart=new Date(navYear,navMonth,1-startOffset);
-        const weeks=[];
-        for(let w=0;w<6;w++)weeks.push(Array.from({length:7},(_,i)=>{const d=new Date(gridStart);d.setDate(gridStart.getDate()+w*7+i);return d;}));
+        const weeksAll=[];
+        for(let w=0;w<6;w++)weeksAll.push(Array.from({length:7},(_,i)=>{const d=new Date(gridStart);d.setDate(gridStart.getDate()+w*7+i);return d;}));
+        let weeks=weeksAll;
+        while(weeks.length>4&&weeks[weeks.length-1].every(d=>d.getMonth()!==navMonth))weeks=weeks.slice(0,-1);
         const mdBlocks=state.multiDayBlocks.filter(b=>{
           if(!state.workVisible&&b.category==='work')return false;
           if(!state.personalVisible&&b.category==='personal')return false;
           return true;
         });
         return(
-          <div ref={calendarScrollRef} style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',position:'relative',borderLeft:'0.5px solid #EBEBEB',overflowY:'auto',overflowX:'hidden'}}>
+          <div ref={calendarScrollRef} style={{flex:'0 1 auto',minHeight:0,display:'flex',flexDirection:'column',position:'relative',borderLeft:'0.5px solid #EBEBEB',overflowY:'auto',overflowX:'hidden'}}>
             {weeks.map((weekDates,i)=>(
               <CalendarWeekRow key={i} fill dimMonth={navMonth}
                 weekDates={weekDates}
