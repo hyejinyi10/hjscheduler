@@ -3462,7 +3462,7 @@ const _mdLineParse=(line)=>{let m;
   if((m=line.match(/^\[( |x|X)?\]\s+(.*)$/)))return{type:'todo',text:m[2],checked:m[1]==='x'||m[1]==='X'};
   return{type:'p',text:line};};
 const _escHtml=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function TblCell({value,onChange,header,minH}){
+function TblCell({value,onChange,header,minH,ri,ci,align,onNav}){
   const ref=useRef(null);
   const fit=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=Math.max(minH||0,el.scrollHeight)+'px';}};
   useEffect(fit,[value,minH]);
@@ -3471,11 +3471,78 @@ function TblCell({value,onChange,header,minH}){
     if((m=line.match(/^(\s*)\[\]\s(.*)$/)))return m[1]+'☐ '+m[2];
     if((m=line.match(/^(\s*)[-*]\s(.*)$/)))return m[1]+'• '+m[2];
     return line;}).join('\n');
-  return <textarea ref={ref} value={value} onChange={e=>onChange(tblMd(e.target.value))} onInput={fit}
-    placeholder={header?'제목':''} rows={1}
+  const onKeyDown=(e)=>{
+    const el=ref.current;if(!el||!onNav)return;
+    const atStart=el.selectionStart===0&&el.selectionEnd===0;
+    const atEnd=el.selectionStart===el.value.length&&el.selectionEnd===el.value.length;
+    const beforeCaret=el.value.slice(0,el.selectionStart);
+    const afterCaret=el.value.slice(el.selectionEnd);
+    const onFirstLine=beforeCaret.indexOf('\n')===-1;
+    const onLastLine=afterCaret.indexOf('\n')===-1;
+    if(e.key==='Tab'){e.preventDefault();onNav(e.shiftKey?'shiftTab':'tab');return;}
+    if(e.key==='ArrowUp'&&onFirstLine){e.preventDefault();onNav('up');return;}
+    if(e.key==='ArrowDown'&&onLastLine){e.preventDefault();onNav('down');return;}
+    if(e.key==='ArrowLeft'&&atStart){e.preventDefault();onNav('left');return;}
+    if(e.key==='ArrowRight'&&atEnd){e.preventDefault();onNav('right');return;}
+  };
+  return <textarea ref={ref} value={value} onChange={e=>onChange(tblMd(e.target.value))} onInput={fit} onKeyDown={onKeyDown}
+    placeholder={header?'제목':''} rows={1} data-cellpos={ri+'-'+ci}
     style={{width:'100%',border:'none',outline:'none',padding:'6px 9px',fontSize:12.5,fontWeight:header?600:400,
       color:'#333',backgroundColor:'transparent',boxSizing:'border-box',fontFamily:'inherit',resize:'none',
+      textAlign:align||'left',
       overflow:'hidden',lineHeight:1.45,whiteSpace:'pre-wrap',wordBreak:'break-word',display:'block',margin:0}}/>;
+}
+const TBL_CELL_COLORS=['#FFF3D6','#FFE0E0','#E3F2E5','#E0EEFB','#F0E5FA','#F0F0EC',''];
+function TblTd({ri,ci,cell,header,ncols,rowsLen,bg,align,rowH,onChange,onNav,onSetBg,onSetAlign,onColResize,onRowResize}){
+  const[hover,setHover]=useState(false);
+  const[popOpen,setPopOpen]=useState(false);
+  const popRef=useRef(null);
+  useEffect(()=>{
+    if(!popOpen)return;
+    const h=(e)=>{if(popRef.current&&!popRef.current.contains(e.target))setPopOpen(false);};
+    setTimeout(()=>document.addEventListener('mousedown',h),0);
+    return()=>document.removeEventListener('mousedown',h);
+  },[popOpen]);
+  return(
+    <td onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{border:'0.5px solid #DCDCE2',padding:0,minWidth:48,backgroundColor:bg||(header?'var(--acc-soft)':'#fff'),position:'relative',height:rowH,verticalAlign:'top'}}>
+      <TblCell value={cell} onChange={onChange} header={header} minH={rowH?rowH-1:0} ri={ri} ci={ci} align={align} onNav={onNav}/>
+      {(hover||popOpen)&&<button onMouseDown={e=>{e.preventDefault();e.stopPropagation();setPopOpen(v=>!v);}} title="셀 배경색 / 정렬"
+        style={{position:'absolute',top:1,right:1,width:13,height:13,borderRadius:3,border:'0.5px solid #D8D8D4',
+          backgroundColor:bg||'#fff',cursor:'pointer',zIndex:3,padding:0}}/>}
+      {popOpen&&(
+        <div ref={popRef} style={{position:'absolute',top:16,right:0,backgroundColor:'#fff',border:'0.5px solid #E0E0E0',borderRadius:8,
+          padding:'7px 8px',boxShadow:'0 6px 20px rgba(0,0,0,0.1)',zIndex:20,width:130}}>
+          <div style={{fontSize:9,color:'#B0B0B0',marginBottom:4}}>배경색</div>
+          <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:header?8:0}}>
+            {TBL_CELL_COLORS.map((c,i)=>(
+              <div key={i} onClick={()=>{onSetBg(c);}} title={c?'':'기본'}
+                style={{width:16,height:16,borderRadius:4,cursor:'pointer',backgroundColor:c||'#fff',
+                  border:c?'0.5px solid rgba(0,0,0,0.08)':'0.5px dashed #CCC',
+                  boxShadow:(bg||'')===c?'0 0 0 1.5px var(--acc)':'none'}}/>
+            ))}
+          </div>
+          {header&&(
+            <React.Fragment>
+              <div style={{fontSize:9,color:'#B0B0B0',marginBottom:4}}>이 열 정렬</div>
+              <div style={{display:'flex',gap:3}}>
+                {[['left','⬅'],['center','⬌'],['right','➡']].map(([al,ic])=>(
+                  <button key={al} onClick={()=>onSetAlign(al)}
+                    style={{flex:1,fontSize:10,padding:'3px 0',borderRadius:4,cursor:'pointer',
+                      border:`0.5px solid ${align===al?'var(--acc-brd)':'#E4E4E4'}`,
+                      backgroundColor:align===al?'var(--acc-bg)':'#FAFAFA',color:align===al?'var(--acc)':'#999'}}>{ic}</button>
+                ))}
+              </div>
+            </React.Fragment>
+          )}
+        </div>
+      )}
+      {header&&<div onMouseDown={onColResize} title="칸 너비 조절"
+        style={{position:'absolute',top:0,right:-3,width:6,height:'100%',cursor:'col-resize',zIndex:2}}/>}
+      {ci===0&&<div onMouseDown={onRowResize} title="행 높이 조절"
+        style={{position:'absolute',left:0,bottom:-3,width:'100%',height:6,cursor:'row-resize',zIndex:2}}/>}
+    </td>
+  );
 }
 function DrawingBlock({block,updateBlock,onFocusCb}){
   const canvasRef=useRef(null);
@@ -3661,6 +3728,21 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
     const ncols=rows[0].length;
     const colWidths=(block.colWidths&&block.colWidths.length===ncols)?block.colWidths:null;
     const rowHeights=(block.rowHeights&&block.rowHeights.length===rows.length)?block.rowHeights:null;
+    const cellBg=block.cellBg||{};
+    const colAlign=block.colAlign||[];
+    const setCellBg=(ri,ci,color)=>{const m={...cellBg};if(color)m[ri+'-'+ci]=color;else delete m[ri+'-'+ci];updateBlock(block.id,{cellBg:m});};
+    const setColAlign=(ci,al)=>{const arr=colAlign.slice();while(arr.length<ncols)arr.push('left');arr[ci]=al;updateBlock(block.id,{colAlign:arr});};
+    const focusCell=(ri,ci,edge)=>{
+      const target=tblRef.current&&tblRef.current.querySelector(`textarea[data-cellpos="${ri}-${ci}"]`);
+      if(target){target.focus();const p=edge==='start'?0:target.value.length;target.selectionStart=target.selectionEnd=p;}
+    };
+    const onCellNav=(ri,ci,dir)=>{
+      if(dir==='up'&&ri>0)focusCell(ri-1,ci,'end');
+      else if(dir==='down'&&ri<rows.length-1)focusCell(ri+1,ci,'start');
+      else if(dir==='left'){if(ci>0)focusCell(ri,ci-1,'end');else if(ri>0)focusCell(ri-1,ncols-1,'end');}
+      else if(dir==='right'||dir==='tab'){if(ci<ncols-1)focusCell(ri,ci+1,'start');else if(ri<rows.length-1)focusCell(ri+1,0,'start');}
+      else if(dir==='shiftTab'){if(ci>0)focusCell(ri,ci-1,'end');else if(ri>0)focusCell(ri-1,ncols-1,'end');}
+    };
     const startColResize=(ci,e)=>{
       e.preventDefault();e.stopPropagation();
       let widths=colWidths?colWidths.slice():null;
@@ -3692,13 +3774,11 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
               {rows.map((row,ri)=>(
                 <tr key={ri} className="tbl-row">
                   {row.map((cell,ci)=>(
-                    <td key={ci} style={{border:'0.5px solid #DCDCE2',padding:0,minWidth:48,backgroundColor:ri===0?'var(--acc-soft)':'#fff',position:'relative',height:rowHeights?rowHeights[ri]:undefined,verticalAlign:'top'}}>
-                      <TblCell value={cell} onChange={v=>setCell(ri,ci,v)} header={ri===0} minH={rowHeights?rowHeights[ri]-1:0}/>
-                      {ri===0&&<div onMouseDown={e=>startColResize(ci,e)} title="칸 너비 조절"
-                        style={{position:'absolute',top:0,right:-3,width:6,height:'100%',cursor:'col-resize',zIndex:2}}/>}
-                      {ci===0&&<div onMouseDown={e=>startRowResize(ri,e)} title="행 높이 조절"
-                        style={{position:'absolute',left:0,bottom:-3,width:'100%',height:6,cursor:'row-resize',zIndex:2}}/>}
-                    </td>
+                    <TblTd key={ci} ri={ri} ci={ci} cell={cell} header={ri===0} ncols={ncols} rowsLen={rows.length}
+                      bg={cellBg[ri+'-'+ci]} align={colAlign[ci]||'left'} rowH={rowHeights?rowHeights[ri]:undefined}
+                      onChange={v=>setCell(ri,ci,v)} onNav={dir=>onCellNav(ri,ci,dir)}
+                      onSetBg={c=>setCellBg(ri,ci,c)} onSetAlign={al=>setColAlign(ci,al)}
+                      onColResize={e=>startColResize(ci,e)} onRowResize={e=>startRowResize(ri,e)}/>
                   ))}
                   <td style={{border:'none',width:20,paddingLeft:3}}>
                     <button tabIndex={-1} onClick={()=>{if(rows.length>1)setRows(rows.filter((_,i)=>i!==ri));}}
