@@ -3496,23 +3496,35 @@ const TBL_CELL_COLORS=['#FFF3D6','#FFE0E0','#E3F2E5','#E0EEFB','#F0E5FA','#F0F0E
 function TblTd({ri,ci,cell,header,ncols,rowsLen,bg,align,rowH,onChange,onNav,onSetBg,onSetAlign,onColResize,onRowResize}){
   const[hover,setHover]=useState(false);
   const[popOpen,setPopOpen]=useState(false);
+  const[popPos,setPopPos]=useState({top:0,left:0});
   const popRef=useRef(null);
+  const btnRef=useRef(null);
   useEffect(()=>{
     if(!popOpen)return;
-    const h=(e)=>{if(popRef.current&&!popRef.current.contains(e.target))setPopOpen(false);};
+    const h=(e)=>{if(popRef.current&&!popRef.current.contains(e.target)&&e.target!==btnRef.current)setPopOpen(false);};
     setTimeout(()=>document.addEventListener('mousedown',h),0);
     return()=>document.removeEventListener('mousedown',h);
   },[popOpen]);
+  const openPop=()=>{
+    if(popOpen){setPopOpen(false);return;}
+    const r=btnRef.current.getBoundingClientRect();
+    const vw=window.innerWidth,vh=window.innerHeight;
+    const popW=140,popH=header?165:95;
+    let left=r.right-popW;if(left<8)left=8;if(left+popW>vw-8)left=vw-8-popW;
+    let top=r.bottom+4;if(top+popH>vh-8)top=Math.max(8,r.top-popH-4);
+    setPopPos({top,left});
+    setPopOpen(true);
+  };
   return(
     <td onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
       style={{border:'0.5px solid #DCDCE2',padding:0,minWidth:48,backgroundColor:bg||(header?'var(--acc-soft)':'#fff'),position:'relative',height:rowH,verticalAlign:'top'}}>
       <TblCell value={cell} onChange={onChange} header={header} minH={rowH?rowH-1:0} ri={ri} ci={ci} align={align} onNav={onNav}/>
-      {(hover||popOpen)&&<button onMouseDown={e=>{e.preventDefault();e.stopPropagation();setPopOpen(v=>!v);}} title="셀 배경색 / 정렬"
+      {(hover||popOpen)&&<button ref={btnRef} onMouseDown={e=>{e.preventDefault();e.stopPropagation();openPop();}} title="셀 배경색 / 정렬"
         style={{position:'absolute',top:1,right:1,width:13,height:13,borderRadius:3,border:'0.5px solid #D8D8D4',
           backgroundColor:bg||'#fff',cursor:'pointer',zIndex:3,padding:0}}/>}
       {popOpen&&(
-        <div ref={popRef} style={{position:'absolute',top:16,right:0,backgroundColor:'#fff',border:'0.5px solid #E0E0E0',borderRadius:8,
-          padding:'7px 8px',boxShadow:'0 6px 20px rgba(0,0,0,0.1)',zIndex:20,width:130}}>
+        <div ref={popRef} style={{position:'fixed',top:popPos.top,left:popPos.left,backgroundColor:'#fff',border:'0.5px solid #E0E0E0',borderRadius:8,
+          padding:'7px 8px',boxShadow:'0 6px 20px rgba(0,0,0,0.14)',zIndex:9999,width:130}}>
           <div style={{fontSize:9,color:'#B0B0B0',marginBottom:4}}>배경색</div>
           <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:header?8:0}}>
             {TBL_CELL_COLORS.map((c,i)=>(
@@ -3806,13 +3818,20 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
       const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
       document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
     };
+    const Dot2=({vertical})=>(
+      <div style={{display:'flex',flexDirection:vertical?'column':'row',gap:2,alignItems:'center',justifyContent:'center'}}>
+        <span style={{width:3,height:3,borderRadius:'50%',backgroundColor:'#D2D2D8'}}/>
+        <span style={{width:3,height:3,borderRadius:'50%',backgroundColor:'#D2D2D8'}}/>
+      </div>
+    );
     return(
       <div style={{flex:1,minWidth:0,margin:'4px 0'}} onMouseDown={()=>onFocusCb(block.id)}>
         <div style={{overflowX:'auto'}}>
           <table ref={tblRef} style={{borderCollapse:'collapse',width:colWidths?'auto':'100%',tableLayout:colWidths?'fixed':'auto'}}>
-            {colWidths&&<colgroup>{colWidths.map((w,i)=><col key={i} style={{width:w}}/>)}<col style={{width:44}}/></colgroup>}
+            {colWidths&&<colgroup><col style={{width:16}}/>{colWidths.map((w,i)=><col key={i} style={{width:w}}/>)}<col style={{width:32}}/></colgroup>}
             <tbody>
               <tr className="tbl-colhandles">
+                <td style={{border:'none'}}/>
                 {Array.from({length:ncols},(_,ci)=>(
                   <td key={ci} draggable
                     onDragStart={e=>{setDragColIdx(ci);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','');}catch(err){}}}
@@ -3821,7 +3840,7 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
                     onDrop={e=>{e.preventDefault();moveCol(dragColIdx,ci);setDragColIdx(null);setOverColIdx(null);}}
                     style={{border:'none',padding:0,height:14,position:'relative',
                       backgroundColor:overColIdx===ci&&dragColIdx!==ci?'var(--acc-bg)':'transparent'}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab',fontSize:9,color:'#CCCCD2'}} title="드래그해서 열 이동">⠿⠿⠿</div>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab'}} title="드래그해서 열 이동"><Dot2/></div>
                     <button onMouseDown={e=>e.stopPropagation()} onClick={()=>insertColAfter(ci)} title="오른쪽에 열 삽입"
                       style={{position:'absolute',top:-1,right:-8,width:12,height:12,borderRadius:'50%',fontSize:9,lineHeight:1,
                         color:'#A8A8B0',border:'0.5px solid #E0E0E6',backgroundColor:'#fff',cursor:'pointer',padding:0,zIndex:4}}>＋</button>
@@ -3834,6 +3853,14 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
                   onDragOver={e=>{if(dragRowIdx!=null){e.preventDefault();setOverRowIdx(ri);}}}
                   onDrop={e=>{if(dragRowIdx!=null){e.preventDefault();moveRow(dragRowIdx,ri);setDragRowIdx(null);setOverRowIdx(null);}}}
                   style={{boxShadow:overRowIdx===ri&&dragRowIdx!==ri?'inset 0 2px 0 var(--acc)':'none'}}>
+                  <td style={{border:'none',padding:0,width:16}}>
+                    <div draggable title="드래그해서 행 이동"
+                      onDragStart={e=>{setDragRowIdx(ri);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','');}catch(err){}}}
+                      onDragEnd={()=>{setDragRowIdx(null);setOverRowIdx(null);}}
+                      style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab'}}>
+                      <Dot2 vertical/>
+                    </div>
+                  </td>
                   {row.map((cell,ci)=>(
                     <TblTd key={ci} ri={ri} ci={ci} cell={cell} header={ri===0} ncols={ncols} rowsLen={rows.length}
                       bg={cellBg[ri+'-'+ci]} align={colAlign[ci]||'left'} rowH={rowHeights?rowHeights[ri]:undefined}
@@ -3841,12 +3868,8 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
                       onSetBg={c=>setCellBg(ri,ci,c)} onSetAlign={al=>setColAlign(ci,al)}
                       onColResize={e=>startColResize(ci,e)} onRowResize={e=>startRowResize(ri,e)}/>
                   ))}
-                  <td style={{border:'none',width:40,paddingLeft:3}}>
-                    <div style={{display:'flex',alignItems:'center',gap:2}}>
-                      <span draggable title="드래그해서 행 이동"
-                        onDragStart={e=>{setDragRowIdx(ri);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','');}catch(err){}}}
-                        onDragEnd={()=>{setDragRowIdx(null);setOverRowIdx(null);}}
-                        style={{fontSize:11,color:'#CCCCD2',cursor:'grab',userSelect:'none',lineHeight:1}}>⠿</span>
+                  <td style={{border:'none',width:32,paddingLeft:3}}>
+                    <div style={{display:'flex',alignItems:'center',gap:3}}>
                       <button onClick={()=>insertRowAfter(ri)} title="아래에 행 삽입"
                         style={{width:14,height:14,borderRadius:'50%',fontSize:9,lineHeight:1,color:'#A8A8B0',
                           border:'0.5px solid #E0E0E6',backgroundColor:'#fff',cursor:'pointer',padding:0}}>＋</button>
@@ -3863,9 +3886,6 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
           </table>
         </div>
         <div style={{display:'flex',gap:5,marginTop:5}}>
-          <button onClick={()=>setRows([...rows.map(r=>r.slice()),new Array(rows[0].length).fill('')])} style={tbtn}>＋ 행</button>
-          <button onClick={()=>setRows(rows.map(r=>[...r,'']))} style={tbtn}>＋ 열</button>
-          {rows[0].length>1&&<button onClick={()=>setRows(rows.map(r=>r.slice(0,-1)))} style={tbtn}>− 마지막 열</button>}
           <button onClick={()=>{if(confirm('표를 삭제할까요?'))updateBlock(block.id,{type:'p',rows:null,html:'',text:''});}}
             style={{...tbtn,color:'#D06A6A',borderColor:'#F2D5D5'}}>표 삭제</button>
         </div>
