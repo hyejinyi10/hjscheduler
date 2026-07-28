@@ -3798,9 +3798,23 @@ function BlockEditor({blocks,onBlocksChange}){
   const hdrLevel=(type)=>({h1:1,h2:2,h3:3}[type]||0);
   const toggleSection=(id)=>setCollapsedSections(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
   const[selBar,setSelBar]=React.useState(null);
+  const[slashMenu,setSlashMenu]=React.useState(null);
   const refsMap=React.useRef({});
   const editingRef=React.useRef(null);
   const focusBlock=(id,edge='end',offset=null)=>setTimeout(()=>{const el=refsMap.current[id];if(!el)return;if(offset!=null)_blkSetCaretTextOffset(el,offset);else _blkFocusEdge(el,edge);},30);
+  const selectSlashType=(typeId)=>{
+    if(!slashMenu)return;
+    const id=slashMenu.blockId;
+    const el=refsMap.current[id];
+    if(el)el.innerHTML='';
+    const upd={type:typeId,html:'',text:'',checked:false};
+    if(typeId==='table')upd.rows=[['','',''],['','','']];
+    if(typeId==='drawing'||typeId==='image')upd.img='';
+    if(typeId==='callout')upd.icon='💡';
+    updateBlock(id,upd);
+    setSlashMenu(null);
+    focusBlock(id,'start');
+  };
   const addBlock=(afterId,type='p',indent=0,html='')=>{
     const tmp=document.createElement('div');tmp.innerHTML=html;
     const nb={id:uid(),type,text:tmp.textContent||'',html,indent,checked:false};
@@ -3909,9 +3923,37 @@ function BlockEditor({blocks,onBlocksChange}){
   const HIGHLIGHT_COLORS=['#FFF176','#CCFF90','#FFB3C6','#80DEEA','#FFCC80','#CF9FFF'];
   const checkSel=()=>{const sel=window.getSelection();if(sel&&sel.toString().length>0){const rect=sel.getRangeAt(0).getBoundingClientRect();setSelBar({x:rect.left+rect.width/2,y:rect.top-6});}else setSelBar(null);};
   const applyFmt=(cmd,val)=>{document.execCommand(cmd,false,val||null);const id=editingRef.current;if(id){const el=refsMap.current[id];if(el)updateBlock(id,{html:el.innerHTML,text:el.textContent||''});}setSelBar(null);};
+  const TEXT_COLORS=['#E24B4A','#D97706','#1D9E75','#2563EB','#7C3AED','#6B6B6B'];
+  const applyCode=()=>{
+    const sel=window.getSelection();
+    if(!sel||!sel.toString()){setSelBar(null);return;}
+    const text=sel.toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    document.execCommand('insertHTML',false,`<code style="background:#F1F1EE;color:#D6336C;padding:1.5px 5px;border-radius:4px;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:0.92em;">${text}</code>`);
+    const id=editingRef.current;if(id){const el=refsMap.current[id];if(el)updateBlock(id,{html:el.innerHTML,text:el.textContent||''});}
+    setSelBar(null);
+  };
   const fmtBtnStyle={color:'#3F3E45',fontSize:12.5,background:'none',border:'none',minWidth:26,height:26,padding:'0 6px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center'};
   return(
     <div style={{position:'relative'}}>
+      {slashMenu&&(
+        <div onMouseDown={e=>e.preventDefault()}
+          style={{position:'fixed',top:slashMenu.y,left:slashMenu.x,backgroundColor:'#fff',borderRadius:10,
+            padding:'5px',minWidth:170,maxHeight:280,overflowY:'auto',zIndex:99999,
+            border:'0.5px solid #E4E4EA',boxShadow:'0 0 0 0.5px rgba(15,15,35,0.04), 0 8px 24px rgba(15,15,35,0.16)'}}>
+          {[{id:'p',ic:'T',lb:'텍스트'},{id:'h1',ic:'H1',lb:'제목 1'},{id:'h2',ic:'H2',lb:'제목 2'},{id:'h3',ic:'H3',lb:'제목 3'},
+            {id:'bullet',ic:'•',lb:'글머리 기호'},{id:'numbered',ic:'1.',lb:'번호 매기기'},{id:'todo',ic:'☑',lb:'할 일'},{id:'check',ic:'☐',lb:'체크리스트'},
+            {id:'quote',ic:'❝',lb:'인용구'},{id:'callout',ic:'💡',lb:'콜아웃 박스'},{id:'divider',ic:'—',lb:'구분선'},
+            {id:'table',ic:'⊞',lb:'표'},{id:'drawing',ic:'✏',lb:'그림 그리기'},{id:'image',ic:'🖼',lb:'이미지 첨부'}].map(it=>(
+            <button key={it.id} onMouseDown={e=>{e.preventDefault();selectSlashType(it.id);}}
+              style={{display:'flex',alignItems:'center',gap:9,width:'100%',padding:'6px 9px',borderRadius:6,
+                border:'none',background:'none',cursor:'pointer',fontSize:12.5,color:'#333',textAlign:'left'}}
+              onMouseEnter={e=>e.currentTarget.style.backgroundColor='#F5F5F3'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}>
+              <span style={{width:20,textAlign:'center',flexShrink:0,color:'#8A8A93',fontSize:11,fontWeight:600}}>{it.ic}</span>
+              <span>{it.lb}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {selBar&&(
         <div onMouseDown={e=>e.preventDefault()}
           style={{position:'fixed',top:Math.max(8,selBar.y-46),left:Math.max(8,selBar.x-140),backgroundColor:'#fff',borderRadius:10,
@@ -3922,6 +3964,10 @@ function BlockEditor({blocks,onBlocksChange}){
           <button className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('italic');}} title="기울임 (Ctrl+I)" style={{...fmtBtnStyle,fontStyle:'italic',fontFamily:'Georgia,serif'}}>i</button>
           <button className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('underline');}} title="밑줄 (Ctrl+U)" style={{...fmtBtnStyle,textDecoration:'underline'}}>U</button>
           <button className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('strikeThrough');}} title="취소선" style={{...fmtBtnStyle,textDecoration:'line-through'}}>S</button>
+          <button className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyCode();}} title="인라인 코드" style={{...fmtBtnStyle,fontFamily:'ui-monospace,monospace',fontSize:11}}>{'</>'}</button>
+          <div style={{width:1,height:16,backgroundColor:'#ECECF1',margin:'0 4px',flexShrink:0}}/>
+          {TEXT_COLORS.map(c=>(<button key={c} className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('foreColor',c);}} title="글자 색" style={{width:20,height:20,borderRadius:6,border:'none',backgroundColor:'transparent',cursor:'pointer',padding:0,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:c,fontFamily:'inherit'}}>A</button>))}
+          <button className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('foreColor','#333333');}} title="글자 색 기본값" style={{width:20,height:20,borderRadius:6,border:'none',backgroundColor:'transparent',cursor:'pointer',padding:0,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:'#333',fontFamily:'inherit'}}>A</button>
           <div style={{width:1,height:16,backgroundColor:'#ECECF1',margin:'0 4px',flexShrink:0}}/>
           {HIGHLIGHT_COLORS.map(c=>(<button key={c} className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('backColor',c);}} title="하이라이트" style={{width:22,height:22,borderRadius:6,border:'none',backgroundColor:'transparent',cursor:'pointer',padding:0,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{width:13,height:13,borderRadius:'50%',backgroundColor:c,display:'block',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,0.14)'}}/></button>))}
           <button className="fmt-btn" onMouseDown={e=>{e.preventDefault();applyFmt('backColor','rgba(0,0,0,0)');}} title="하이라이트 제거" style={{width:22,height:22,borderRadius:6,border:'none',backgroundColor:'transparent',cursor:'pointer',padding:0,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{width:13,height:13,borderRadius:'50%',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'inset 0 0 0 1px #D6D6DE',fontSize:7,color:'#96969E'}}>✕</span></button>
@@ -3983,7 +4029,8 @@ function BlockEditor({blocks,onBlocksChange}){
                   onEnterKey={handleEnterKey} onBackspaceKey={handleBackspaceKey} onTabKey={handleTabKey}
                   onArrowNav={handleArrowNav} onPasteLines={handlePasteLines}
                   onFocusCb={setFocusedId} editingRef={editingRef} checkSel={checkSel}
-                  TYPES={TYPES} bulletMark={bulletMark} numMark={numMark}/>
+                  TYPES={TYPES} bulletMark={bulletMark} numMark={numMark}
+                  onSlash={p=>setSlashMenu(p&&{blockId:p.id,x:p.rect.left,y:p.rect.bottom+6})}/>
               </div>
             );
           });
