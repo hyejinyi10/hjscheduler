@@ -3454,7 +3454,7 @@ const _blkCaretOnEdgeLine=(el,edge)=>{const sel=window.getSelection();if(!sel.ra
 const _blkFocusEdge=(el,edge)=>{if(!el)return;el.focus();const r=document.createRange();r.selectNodeContents(el);r.collapse(edge==='start');const s=window.getSelection();s.removeAllRanges();s.addRange(r);};
 const _blkSetCaretTextOffset=(el,off)=>{if(!el)return;el.focus();const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let n,acc=0;while((n=walker.nextNode())){const len=n.textContent.length;if(acc+len>=off){const r=document.createRange();r.setStart(n,Math.max(0,off-acc));r.collapse(true);const s=window.getSelection();s.removeAllRanges();s.addRange(r);return;}acc+=len;}_blkFocusEdge(el,'end');};
 const _blkSplitAtCaret=(el)=>{const sel=window.getSelection();if(!sel.rangeCount)return{before:el.innerHTML,after:''};const r=sel.getRangeAt(0);if(!r.collapsed)r.deleteContents();const rest=document.createRange();rest.setStart(r.endContainer,r.endOffset);rest.setEnd(el,el.childNodes.length);const frag=rest.extractContents();const d=document.createElement('div');d.appendChild(frag);const clean=(h)=>h.replace(/^(<br\s*\/?>)+/,'').replace(/(<br\s*\/?>)+$/,'');return{before:clean(el.innerHTML),after:clean(d.innerHTML)};};
-const _MD_MAP={'#':'h1','##':'h2','###':'h3','-':'bullet','*':'bullet','1.':'numbered','[]':'todo'};
+const _MD_MAP={'#':'h1','##':'h2','###':'h3','-':'bullet','*':'bullet','1.':'numbered','[]':'todo','>':'quote','---':'divider'};
 const _mdLineParse=(line)=>{let m;
   if((m=line.match(/^(#{1,3})\s+(.*)$/)))return{type:['h1','h2','h3'][m[1].length-1],text:m[2]};
   if((m=line.match(/^[-*•◦▪]\s+(.*)$/)))return{type:'bullet',text:m[1]};
@@ -3544,7 +3544,7 @@ function DrawingBlock({block,updateBlock,onFocusCb}){
     </div>
   );
 }
-function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onTabKey,onArrowNav,onPasteLines,onFocusCb,editingRef,checkSel,TYPES,bulletMark,numMark}){
+function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onTabKey,onArrowNav,onPasteLines,onFocusCb,editingRef,checkSel,TYPES,bulletMark,numMark,onSlash}){
   const divRef=React.useRef(null);
   const tblRef=React.useRef(null);
   React.useEffect(()=>{
@@ -3557,6 +3557,7 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
   const isNum=block.type==='numbered';
   const isTodo=block.type==='todo';
   const isHdr=block.type==='h1'||block.type==='h2'||block.type==='h3';
+  const isQuote=block.type==='quote';
   const mark=isBullet?bulletMark(block.indent||0):isNum?numMark(bIdx):'';
   const syncState=()=>{const el=divRef.current;if(!el)return;
     const raw=el.textContent||'';const htm=el.innerHTML;
@@ -3584,6 +3585,73 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
   }
   if(block.type==='drawing'){
     return <DrawingBlock block={block} updateBlock={updateBlock} onFocusCb={onFocusCb}/>;
+  }
+  if(block.type==='divider'){
+    return(
+      <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:8,margin:'6px 0'}} onMouseDown={()=>onFocusCb(block.id)}>
+        <div style={{flex:1,height:1,backgroundColor:'#E5E5E2'}}/>
+      </div>
+    );
+  }
+  if(block.type==='callout'){
+    const ICONS=['💡','✅','⚠️','📌','🔥','📝'];
+    const cycleIcon=()=>{const i=ICONS.indexOf(block.icon||'💡');updateBlock(block.id,{icon:ICONS[(i+1)%ICONS.length]});};
+    return(
+      <div style={{flex:1,minWidth:0,display:'flex',gap:9,padding:'10px 12px',borderRadius:8,margin:'4px 0',backgroundColor:'#FFF8E1',border:'0.5px solid #FFE8A3'}} onMouseDown={()=>onFocusCb(block.id)}>
+        <span onClick={cycleIcon} title="클릭해서 아이콘 변경" style={{cursor:'pointer',fontSize:16,flexShrink:0,lineHeight:1.5}}>{block.icon||'💡'}</span>
+        <div ref={el=>{divRef.current=el;refsMap.current[block.id]=el;}}
+          contentEditable suppressContentEditableWarning
+          data-placeholder="강조할 내용"
+          onFocus={()=>{onFocusCb(block.id);editingRef.current=block.id;}}
+          onBlur={syncState}
+          onInput={e=>updateBlock(block.id,{html:e.currentTarget.innerHTML,text:e.currentTarget.textContent||''})}
+          onMouseUp={checkSel} onKeyUp={checkSel}
+          onKeyDown={e=>{
+            const el=divRef.current;
+            if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();onEnterKey(block,el);return;}
+            if(e.key==='Backspace'){const empty=!el||!el.textContent||!el.textContent.trim();if(empty){e.preventDefault();onBackspaceKey(block,'empty');return;}}
+          }}
+          style={{flex:1,fontSize:13,color:'#5C4A1E',lineHeight:1.5,outline:'none',wordBreak:'break-word',whiteSpace:'pre-wrap',fontFamily:'inherit'}}/>
+      </div>
+    );
+  }
+  if(block.type==='image'){
+    const fileRef=React.useRef(null);
+    const handleFile=(f)=>{
+      if(!f)return;
+      const img=new Image();
+      const reader=new FileReader();
+      reader.onload=(ev)=>{
+        img.onload=()=>{
+          const maxW=800;const scale=Math.min(1,maxW/img.width);
+          const cv=document.createElement('canvas');
+          cv.width=Math.round(img.width*scale);cv.height=Math.round(img.height*scale);
+          cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+          updateBlock(block.id,{img:cv.toDataURL('image/jpeg',0.82)});
+        };
+        img.src=ev.target.result;
+      };
+      reader.readAsDataURL(f);
+    };
+    return(
+      <div style={{flex:1,minWidth:0,margin:'6px 0'}} onMouseDown={()=>onFocusCb(block.id)}>
+        <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
+        {block.img?(
+          <div style={{position:'relative',display:'inline-block',maxWidth:'100%'}}>
+            <img src={block.img} style={{maxWidth:'100%',borderRadius:8,display:'block'}}/>
+            <div style={{position:'absolute',top:6,right:6,display:'flex',gap:4}}>
+              <button onClick={()=>fileRef.current?.click()} title="교체" style={{fontSize:10.5,padding:'3px 8px',borderRadius:5,backgroundColor:'rgba(0,0,0,0.55)',color:'#fff',border:'none',cursor:'pointer'}}>교체</button>
+              <button onClick={()=>updateBlock(block.id,{img:''})} title="제거" style={{fontSize:10.5,padding:'3px 8px',borderRadius:5,backgroundColor:'rgba(0,0,0,0.55)',color:'#fff',border:'none',cursor:'pointer'}}>제거</button>
+            </div>
+          </div>
+        ):(
+          <button onClick={()=>fileRef.current?.click()}
+            style={{width:'100%',padding:'22px 0',borderRadius:8,border:'1.5px dashed #DADAD4',backgroundColor:'#FAFAF8',color:'#A8A8A2',fontSize:12.5,cursor:'pointer'}}>
+            🖼 클릭해서 이미지 업로드
+          </button>
+        )}
+      </div>
+    );
   }
   if(block.type==='table'){
     const rows=(block.rows&&block.rows.length)?block.rows:[['',''],['','']];
@@ -3655,7 +3723,7 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
     );
   }
   return(
-    <React.Fragment>
+    <div style={isQuote?{display:'flex',flex:1,minWidth:0,borderLeft:'2.5px solid #D8D8D2',paddingLeft:10}:{display:'flex',flex:1,minWidth:0}}>
       {(isBullet||isNum)&&<span style={{marginRight:6,marginTop:isBullet?3:2,color:'#909090',
         fontSize:isBullet?((block.indent||0)%3===0?13:11):11,
         fontWeight:isNum?500:400,flexShrink:0,minWidth:isNum?20:12,lineHeight:1.6,
@@ -3676,6 +3744,10 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
             const key=t.slice(0,-1).trim();
             if(_MD_MAP[key]){el.innerHTML='';updateBlock(block.id,{type:_MD_MAP[key],html:'',text:'',checked:false});return;}
           }
+          if(onSlash){
+            if(t==='/'){const r=el.getBoundingClientRect();onSlash({id:block.id,rect:r});}
+            else onSlash(null);
+          }
           updateBlock(block.id,{html:el.innerHTML,text:t});
         }}
         onPaste={e=>{
@@ -3690,6 +3762,7 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
         onMouseUp={checkSel} onKeyUp={checkSel}
         onKeyDown={e=>{
           const el=divRef.current;
+          if(e.key==='Escape'&&onSlash){onSlash(null);}
           if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey){
             const cmd={b:'bold',i:'italic',u:'underline'}[e.key.toLowerCase()];
             if(cmd){e.preventDefault();document.execCommand(cmd,false,null);syncState();return;}
@@ -3706,14 +3779,15 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
           if(e.key==='ArrowDown'&&!e.shiftKey&&_blkCaretOnEdgeLine(el,'last')){e.preventDefault();onArrowNav(block,1);return;}
         }}
         style={{flex:1,fontSize:td.fs,fontWeight:td.fw,minHeight:td.fs*1.6,
-          color:block.type==='h1'?'#111':block.type==='h2'?'#222':'#333',
+          color:block.type==='h1'?'#111':block.type==='h2'?'#222':isQuote?'#65655F':'#333',
+          fontStyle:isQuote?'italic':'normal',
           lineHeight:block.type==='h1'?1.3:block.type==='h2'?1.35:1.6,
           paddingBottom:block.type==='h1'||block.type==='h2'?4:2,
           borderBottom:block.type==='h1'?'1.5px solid #EBEBEB':block.type==='h2'?'0.5px solid #F0F0F0':'none',
           textDecoration:isTodo&&block.checked?'line-through':'none',
           opacity:isTodo&&block.checked?0.5:1,
           outline:'none',wordBreak:'break-word',whiteSpace:'pre-wrap',fontFamily:'inherit'}}/>
-    </React.Fragment>
+    </div>
   );
 }
 function BlockEditor({blocks,onBlocksChange}){
@@ -3755,8 +3829,12 @@ function BlockEditor({blocks,onBlocksChange}){
     {id:'bullet',label:'•',fs:13,fw:400,ph:'항목'},{id:'numbered',label:'1.',fs:13,fw:400,ph:'항목'},
     {id:'todo',label:'☑',fs:13,fw:400,ph:'할 일'},
     {id:'check',label:'☐',fs:13,fw:400,ph:'체크리스트'},
+    {id:'quote',label:'❝',fs:13,fw:400,ph:'인용구'},
+    {id:'callout',label:'💡',fs:13,fw:400,ph:'강조할 내용'},
+    {id:'divider',label:'—',fs:13,fw:400,ph:''},
     {id:'table',label:'⊞',fs:13,fw:400,ph:''},
     {id:'drawing',label:'✏',fs:13,fw:400,ph:''},
+    {id:'image',label:'🖼',fs:13,fw:400,ph:''},
   ];
   const focusedBlock=blocks.find(b=>b.id===focusedId)||blocks[0];
   const activeType=TYPES.find(t=>t.id===focusedBlock?.type)||TYPES[3];
@@ -3855,10 +3933,10 @@ function BlockEditor({blocks,onBlocksChange}){
         {TYPES.map(t=>(
           <button key={t.id}
             onMouseDown={e=>{e.preventDefault();const id=focusedId||(blocks[0]?.id);if(!id)return;const cur=blocks.find(b=>b.id===id);
-              const special=['table','drawing'];
+              const special=['table','drawing','divider','image'];
               if(cur&&special.includes(cur.type)&&t.id!==cur.type){const nb={id:uid(),type:t.id,text:'',html:'',indent:0,checked:false};const idx=blocks.findIndex(b=>b.id===id);const arr=blocks.slice();arr.splice(idx+1,0,nb);onBlocksChange(arr);focusBlock(nb.id,'start');return;}
-              const nt=cur?.type===t.id?'p':t.id;const upd={type:nt};if(nt==='table'&&!(cur&&cur.rows&&cur.rows.length))upd.rows=[['','',''],['','','']];if(nt==='drawing'&&cur?.img===undefined)upd.img='';updateBlock(id,upd);}}
-            title={{h1:'제목 1',h2:'제목 2',h3:'제목 3',p:'텍스트',bullet:'글머리 기호',numbered:'번호 매기기',todo:'할 일',table:'표 (2행 3열로 시작)',drawing:'그림 그리기'}[t.id]}
+              const nt=cur?.type===t.id?'p':t.id;const upd={type:nt};if(nt==='table'&&!(cur&&cur.rows&&cur.rows.length))upd.rows=[['','',''],['','','']];if(nt==='drawing'&&cur?.img===undefined)upd.img='';if(nt==='image'&&cur?.img===undefined)upd.img='';if(nt==='callout'&&!cur?.icon)upd.icon='💡';updateBlock(id,upd);}}
+            title={{h1:'제목 1',h2:'제목 2',h3:'제목 3',p:'텍스트',bullet:'글머리 기호',numbered:'번호 매기기',todo:'할 일',quote:'인용구',callout:'콜아웃 박스',divider:'구분선',table:'표 (2행 3열로 시작)',drawing:'그림 그리기',image:'이미지 첨부'}[t.id]}
             style={{padding:'3px 9px',borderRadius:6,fontSize:11,fontWeight:600,
               border:`0.5px solid ${activeType.id===t.id?'var(--acc-brd)':'transparent'}`,
               backgroundColor:activeType.id===t.id?'var(--acc-bg)':'transparent',
