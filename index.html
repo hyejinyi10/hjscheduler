@@ -3614,6 +3614,10 @@ function DrawingBlock({block,updateBlock,onFocusCb}){
 function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onTabKey,onArrowNav,onPasteLines,onFocusCb,editingRef,checkSel,TYPES,bulletMark,numMark,onSlash}){
   const divRef=React.useRef(null);
   const tblRef=React.useRef(null);
+  const[dragRowIdx,setDragRowIdx]=React.useState(null);
+  const[overRowIdx,setOverRowIdx]=React.useState(null);
+  const[dragColIdx,setDragColIdx]=React.useState(null);
+  const[overColIdx,setOverColIdx]=React.useState(null);
   React.useEffect(()=>{
     if(divRef.current){divRef.current.innerHTML=block.html||'';}
     refsMap.current[block.id]=divRef.current;
@@ -3732,6 +3736,43 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
     const colAlign=block.colAlign||[];
     const setCellBg=(ri,ci,color)=>{const m={...cellBg};if(color)m[ri+'-'+ci]=color;else delete m[ri+'-'+ci];updateBlock(block.id,{cellBg:m});};
     const setColAlign=(ci,al)=>{const arr=colAlign.slice();while(arr.length<ncols)arr.push('left');arr[ci]=al;updateBlock(block.id,{colAlign:arr});};
+    const remapBgRows=(mapFn)=>{const m={};Object.entries(cellBg).forEach(([k,v])=>{const[r,c]=k.split('-').map(Number);const nr=mapFn(r);if(nr!=null)m[nr+'-'+c]=v;});return m;};
+    const remapBgCols=(mapFn)=>{const m={};Object.entries(cellBg).forEach(([k,v])=>{const[r,c]=k.split('-').map(Number);const nc=mapFn(c);if(nc!=null)m[r+'-'+nc]=v;});return m;};
+    const insertRowAfter=(ri)=>{
+      const newRows=[...rows.slice(0,ri+1),new Array(ncols).fill(''),...rows.slice(ri+1)];
+      const newRH=rowHeights?[...rowHeights.slice(0,ri+1),36,...rowHeights.slice(ri+1)]:null;
+      const newBg=remapBgRows(r=>r>ri?r+1:r);
+      updateBlock(block.id,{rows:newRows,rowHeights:newRH,cellBg:newBg});
+    };
+    const insertColAfter=(ci)=>{
+      const newRows=rows.map(row=>[...row.slice(0,ci+1),'',...row.slice(ci+1)]);
+      const newCW=colWidths?[...colWidths.slice(0,ci+1),120,...colWidths.slice(ci+1)]:null;
+      const newCA=colAlign.length?[...colAlign.slice(0,ci+1),'left',...colAlign.slice(ci+1)]:colAlign;
+      const newBg=remapBgCols(c=>c>ci?c+1:c);
+      updateBlock(block.id,{rows:newRows,colWidths:newCW,colAlign:newCA,cellBg:newBg});
+    };
+    const moveRow=(from,to)=>{
+      if(from===to||from==null)return;
+      const arr=rows.slice();const[item]=arr.splice(from,1);arr.splice(to,0,item);
+      let newRH=null;
+      if(rowHeights){const rh=rowHeights.slice();const[h]=rh.splice(from,1);rh.splice(to,0,h);newRH=rh;}
+      const order=rows.map((_,i)=>i);const[oi]=order.splice(from,1);order.splice(to,0,oi);
+      const oldToNew={};order.forEach((oldIdx,newIdx)=>{oldToNew[oldIdx]=newIdx;});
+      const newBg=remapBgRows(r=>oldToNew[r]!==undefined?oldToNew[r]:r);
+      updateBlock(block.id,{rows:arr,rowHeights:newRH,cellBg:newBg});
+    };
+    const moveCol=(from,to)=>{
+      if(from===to||from==null)return;
+      const newRows=rows.map(row=>{const arr=row.slice();const[item]=arr.splice(from,1);arr.splice(to,0,item);return arr;});
+      let newCW=null;
+      if(colWidths){const cw=colWidths.slice();const[w]=cw.splice(from,1);cw.splice(to,0,w);newCW=cw;}
+      let newCA=colAlign;
+      if(colAlign.length){const ca=colAlign.slice();const[a]=ca.splice(from,1);ca.splice(to,0,a);newCA=ca;}
+      const order=Array.from({length:ncols},(_,i)=>i);const[oi]=order.splice(from,1);order.splice(to,0,oi);
+      const oldToNew={};order.forEach((oldIdx,newIdx)=>{oldToNew[oldIdx]=newIdx;});
+      const newBg=remapBgCols(c=>oldToNew[c]!==undefined?oldToNew[c]:c);
+      updateBlock(block.id,{rows:newRows,colWidths:newCW,colAlign:newCA,cellBg:newBg});
+    };
     const focusCell=(ri,ci,edge)=>{
       const target=tblRef.current&&tblRef.current.querySelector(`textarea[data-cellpos="${ri}-${ci}"]`);
       if(target){target.focus();const p=edge==='start'?0:target.value.length;target.selectionStart=target.selectionEnd=p;}
@@ -3769,10 +3810,30 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
       <div style={{flex:1,minWidth:0,margin:'4px 0'}} onMouseDown={()=>onFocusCb(block.id)}>
         <div style={{overflowX:'auto'}}>
           <table ref={tblRef} style={{borderCollapse:'collapse',width:colWidths?'auto':'100%',tableLayout:colWidths?'fixed':'auto'}}>
-            {colWidths&&<colgroup>{colWidths.map((w,i)=><col key={i} style={{width:w}}/>)}<col style={{width:22}}/></colgroup>}
+            {colWidths&&<colgroup>{colWidths.map((w,i)=><col key={i} style={{width:w}}/>)}<col style={{width:44}}/></colgroup>}
             <tbody>
+              <tr className="tbl-colhandles">
+                {Array.from({length:ncols},(_,ci)=>(
+                  <td key={ci} draggable
+                    onDragStart={e=>{setDragColIdx(ci);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','');}catch(err){}}}
+                    onDragEnd={()=>{setDragColIdx(null);setOverColIdx(null);}}
+                    onDragOver={e=>{e.preventDefault();setOverColIdx(ci);}}
+                    onDrop={e=>{e.preventDefault();moveCol(dragColIdx,ci);setDragColIdx(null);setOverColIdx(null);}}
+                    style={{border:'none',padding:0,height:14,position:'relative',
+                      backgroundColor:overColIdx===ci&&dragColIdx!==ci?'var(--acc-bg)':'transparent'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab',fontSize:9,color:'#CCCCD2'}} title="드래그해서 열 이동">⠿⠿⠿</div>
+                    <button onMouseDown={e=>e.stopPropagation()} onClick={()=>insertColAfter(ci)} title="오른쪽에 열 삽입"
+                      style={{position:'absolute',top:-1,right:-8,width:12,height:12,borderRadius:'50%',fontSize:9,lineHeight:1,
+                        color:'#A8A8B0',border:'0.5px solid #E0E0E6',backgroundColor:'#fff',cursor:'pointer',padding:0,zIndex:4}}>＋</button>
+                  </td>
+                ))}
+                <td style={{border:'none'}}/>
+              </tr>
               {rows.map((row,ri)=>(
-                <tr key={ri} className="tbl-row">
+                <tr key={ri} className="tbl-row"
+                  onDragOver={e=>{if(dragRowIdx!=null){e.preventDefault();setOverRowIdx(ri);}}}
+                  onDrop={e=>{if(dragRowIdx!=null){e.preventDefault();moveRow(dragRowIdx,ri);setDragRowIdx(null);setOverRowIdx(null);}}}
+                  style={{boxShadow:overRowIdx===ri&&dragRowIdx!==ri?'inset 0 2px 0 var(--acc)':'none'}}>
                   {row.map((cell,ci)=>(
                     <TblTd key={ci} ri={ri} ci={ci} cell={cell} header={ri===0} ncols={ncols} rowsLen={rows.length}
                       bg={cellBg[ri+'-'+ci]} align={colAlign[ci]||'left'} rowH={rowHeights?rowHeights[ri]:undefined}
@@ -3780,12 +3841,21 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
                       onSetBg={c=>setCellBg(ri,ci,c)} onSetAlign={al=>setColAlign(ci,al)}
                       onColResize={e=>startColResize(ci,e)} onRowResize={e=>startRowResize(ri,e)}/>
                   ))}
-                  <td style={{border:'none',width:20,paddingLeft:3}}>
-                    <button tabIndex={-1} onClick={()=>{if(rows.length>1)setRows(rows.filter((_,i)=>i!==ri));}}
-                      className="tbl-delrow" title="행 삭제"
-                      style={{width:16,height:16,borderRadius:'50%',fontSize:10,lineHeight:1,color:'#C4C4C8',
-                        border:'0.5px solid #E8E8EC',backgroundColor:'#fff',cursor:'pointer',padding:0,
-                        visibility:rows.length>1?'visible':'hidden'}}>−</button>
+                  <td style={{border:'none',width:40,paddingLeft:3}}>
+                    <div style={{display:'flex',alignItems:'center',gap:2}}>
+                      <span draggable title="드래그해서 행 이동"
+                        onDragStart={e=>{setDragRowIdx(ri);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','');}catch(err){}}}
+                        onDragEnd={()=>{setDragRowIdx(null);setOverRowIdx(null);}}
+                        style={{fontSize:11,color:'#CCCCD2',cursor:'grab',userSelect:'none',lineHeight:1}}>⠿</span>
+                      <button onClick={()=>insertRowAfter(ri)} title="아래에 행 삽입"
+                        style={{width:14,height:14,borderRadius:'50%',fontSize:9,lineHeight:1,color:'#A8A8B0',
+                          border:'0.5px solid #E0E0E6',backgroundColor:'#fff',cursor:'pointer',padding:0}}>＋</button>
+                      <button tabIndex={-1} onClick={()=>{if(rows.length>1)setRows(rows.filter((_,i)=>i!==ri));}}
+                        className="tbl-delrow" title="행 삭제"
+                        style={{width:14,height:14,borderRadius:'50%',fontSize:9,lineHeight:1,color:'#C4C4C8',
+                          border:'0.5px solid #E8E8EC',backgroundColor:'#fff',cursor:'pointer',padding:0,
+                          visibility:rows.length>1?'visible':'hidden'}}>−</button>
+                    </div>
                   </td>
                 </tr>
               ))}
