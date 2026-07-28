@@ -3462,7 +3462,7 @@ const _mdLineParse=(line)=>{let m;
   if((m=line.match(/^\[( |x|X)?\]\s+(.*)$/)))return{type:'todo',text:m[2],checked:m[1]==='x'||m[1]==='X'};
   return{type:'p',text:line};};
 const _escHtml=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function TblCell({value,onChange,header,minH,ri,ci,align,onNav}){
+function TblCell({value,onChange,header,minH,ri,ci,align,fg,onNav}){
   const ref=useRef(null);
   const fit=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=Math.max(minH||0,el.scrollHeight)+'px';}};
   useEffect(fit,[value,minH]);
@@ -3488,12 +3488,12 @@ function TblCell({value,onChange,header,minH,ri,ci,align,onNav}){
   return <textarea ref={ref} value={value} onChange={e=>onChange(tblMd(e.target.value))} onInput={fit} onKeyDown={onKeyDown}
     placeholder={header?'제목':''} rows={1} data-cellpos={ri+'-'+ci}
     style={{width:'100%',border:'none',outline:'none',padding:'6px 9px',fontSize:12.5,fontWeight:header?600:400,
-      color:'#333',backgroundColor:'transparent',boxSizing:'border-box',fontFamily:'inherit',resize:'none',
+      color:fg||'#333',backgroundColor:'transparent',boxSizing:'border-box',fontFamily:'inherit',resize:'none',
       textAlign:align||'left',
       overflow:'hidden',lineHeight:1.45,whiteSpace:'pre-wrap',wordBreak:'break-word',display:'block',margin:0}}/>;
 }
 const TBL_CELL_COLORS=['#FFF3D6','#FFE0E0','#E3F2E5','#E0EEFB','#F0E5FA','#F0F0EC',''];
-function TblTd({ri,ci,cell,header,ncols,rowsLen,bg,align,rowH,onChange,onNav,onSetBg,onSetAlign,onColResize,onRowResize}){
+function TblTd({ri,ci,cell,header,ncols,rowsLen,bg,fg,align,rowH,rowSpan,colSpan,merged,selected,onChange,onNav,onSetBg,onSetAlign,onColResize,onRowResize,onCellDown,onCellEnter,onUnmerge}){
   const[hover,setHover]=useState(false);
   const[popOpen,setPopOpen]=useState(false);
   const[popPos,setPopPos]=useState({top:0,left:0});
@@ -3516,9 +3516,14 @@ function TblTd({ri,ci,cell,header,ncols,rowsLen,bg,align,rowH,onChange,onNav,onS
     setPopOpen(true);
   };
   return(
-    <td onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+    <td rowSpan={rowSpan||1} colSpan={colSpan||1}
+      onMouseDown={onCellDown} onMouseEnter={()=>{setHover(true);onCellEnter&&onCellEnter();}} onMouseLeave={()=>setHover(false)}
       style={{border:'0.5px solid #DCDCE2',padding:0,minWidth:48,backgroundColor:bg||(header?'var(--acc-soft)':'#fff'),position:'relative',height:rowH,verticalAlign:'top'}}>
-      <TblCell value={cell} onChange={onChange} header={header} minH={rowH?rowH-1:0} ri={ri} ci={ci} align={align} onNav={onNav}/>
+      <TblCell value={cell} onChange={onChange} header={header} minH={rowH?rowH-1:0} ri={ri} ci={ci} align={align} fg={fg} onNav={onNav}/>
+      {selected&&<div style={{position:'absolute',inset:0,backgroundColor:'rgba(37,99,235,0.14)',boxShadow:'inset 0 0 0 1.5px rgba(37,99,235,0.5)',pointerEvents:'none',zIndex:1}}/>}
+      {merged&&hover&&<button onMouseDown={e=>e.stopPropagation()} onClick={onUnmerge} title="병합 해제"
+        style={{position:'absolute',bottom:1,left:1,fontSize:8,padding:'1px 5px',borderRadius:4,color:'#909098',
+          border:'0.5px solid #E4E4E8',backgroundColor:'#fff',cursor:'pointer',zIndex:3}}>병합해제</button>}
       {(hover||popOpen)&&<button ref={btnRef} onMouseDown={e=>{e.preventDefault();e.stopPropagation();openPop();}} title="셀 배경색 / 정렬"
         style={{position:'absolute',top:1,right:1,width:13,height:13,borderRadius:3,border:'0.5px solid #D8D8D4',
           backgroundColor:bg||'#fff',cursor:'pointer',zIndex:3,padding:0}}/>}
@@ -3630,6 +3635,14 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
   const[overRowIdx,setOverRowIdx]=React.useState(null);
   const[dragColIdx,setDragColIdx]=React.useState(null);
   const[overColIdx,setOverColIdx]=React.useState(null);
+  const[selRange,setSelRange]=React.useState(null); // {r1,c1,r2,c2}
+  const[selecting,setSelecting]=React.useState(false);
+  React.useEffect(()=>{
+    if(!selecting)return;
+    const up=()=>setSelecting(false);
+    document.addEventListener('mouseup',up);
+    return()=>document.removeEventListener('mouseup',up);
+  },[selecting]);
   React.useEffect(()=>{
     if(divRef.current){divRef.current.innerHTML=block.html||'';}
     refsMap.current[block.id]=divRef.current;
@@ -3745,23 +3758,65 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
     const colWidths=(block.colWidths&&block.colWidths.length===ncols)?block.colWidths:null;
     const rowHeights=(block.rowHeights&&block.rowHeights.length===rows.length)?block.rowHeights:null;
     const cellBg=block.cellBg||{};
+    const cellFg=block.cellFg||{};
     const colAlign=block.colAlign||[];
+    const merges=block.merges||[];
     const setCellBg=(ri,ci,color)=>{const m={...cellBg};if(color)m[ri+'-'+ci]=color;else delete m[ri+'-'+ci];updateBlock(block.id,{cellBg:m});};
     const setColAlign=(ci,al)=>{const arr=colAlign.slice();while(arr.length<ncols)arr.push('left');arr[ci]=al;updateBlock(block.id,{colAlign:arr});};
-    const remapBgRows=(mapFn)=>{const m={};Object.entries(cellBg).forEach(([k,v])=>{const[r,c]=k.split('-').map(Number);const nr=mapFn(r);if(nr!=null)m[nr+'-'+c]=v;});return m;};
-    const remapBgCols=(mapFn)=>{const m={};Object.entries(cellBg).forEach(([k,v])=>{const[r,c]=k.split('-').map(Number);const nc=mapFn(c);if(nc!=null)m[r+'-'+nc]=v;});return m;};
+    const remapMapRows=(map,mapFn)=>{const m={};Object.entries(map).forEach(([k,v])=>{const[r,c]=k.split('-').map(Number);const nr=mapFn(r);if(nr!=null)m[nr+'-'+c]=v;});return m;};
+    const remapMapCols=(map,mapFn)=>{const m={};Object.entries(map).forEach(([k,v])=>{const[r,c]=k.split('-').map(Number);const nc=mapFn(c);if(nc!=null)m[r+'-'+nc]=v;});return m;};
+    // 선택 영역 (드래그 다중선택)
+    const normRange=(rg)=>rg?{r1:Math.min(rg.r1,rg.r2),c1:Math.min(rg.c1,rg.c2),r2:Math.max(rg.r1,rg.r2),c2:Math.max(rg.c1,rg.c2)}:null;
+    const nr=normRange(selRange);
+    const inSel=(ri,ci)=>nr&&ri>=nr.r1&&ri<=nr.r2&&ci>=nr.c1&&ci<=nr.c2;
+    const selIsMulti=nr&&(nr.r1!==nr.r2||nr.c1!==nr.c2);
+    const onCellDown=(ri,ci)=>{setSelRange({r1:ri,c1:ci,r2:ri,c2:ci});setSelecting(true);};
+    const onCellEnter=(ri,ci)=>{if(selecting)setSelRange(rg=>rg?{...rg,r2:ri,c2:ci}:{r1:ri,c1:ci,r2:ri,c2:ci});};
+    const selectRow=(ri)=>setSelRange({r1:ri,c1:0,r2:ri,c2:ncols-1});
+    const selectCol=(ci)=>setSelRange({r1:0,c1:ci,r2:rows.length-1,c2:ci});
+    const bulkSetBg=(color)=>{
+      const m={...cellBg};
+      for(let r=nr.r1;r<=nr.r2;r++)for(let c=nr.c1;c<=nr.c2;c++){if(color)m[r+'-'+c]=color;else delete m[r+'-'+c];}
+      updateBlock(block.id,{cellBg:m});
+    };
+    const bulkSetFg=(color)=>{
+      const m={...cellFg};
+      for(let r=nr.r1;r<=nr.r2;r++)for(let c=nr.c1;c<=nr.c2;c++){if(color)m[r+'-'+c]=color;else delete m[r+'-'+c];}
+      updateBlock(block.id,{cellFg:m});
+    };
+    // 병합
+    const mergeAt=(ri,ci)=>merges.find(m=>m.r2<rows.length&&m.c2<ncols&&ri>=m.r1&&ri<=m.r2&&ci>=m.c1&&ci<=m.c2);
+    const isMergeAnchor=(ri,ci)=>{const m=mergeAt(ri,ci);return m&&m.r1===ri&&m.c1===ci;};
+    const rangeOverlapsMerge=()=>nr&&merges.some(m=>!(nr.r2<m.r1||nr.r1>m.r2||nr.c2<m.c1||nr.c1>m.c2));
+    const mergeSelected=()=>{
+      if(!nr||!selIsMulti)return;
+      if(rangeOverlapsMerge()){alert('이미 병합된 셀과 겹쳐서 합칠 수 없어요. 먼저 병합을 해제해주세요.');return;}
+      let joined=[];
+      for(let r=nr.r1;r<=nr.r2;r++)for(let c=nr.c1;c<=nr.c2;c++){if((rows[r][c]||'').trim())joined.push(rows[r][c].trim());}
+      const newRows=rows.map(row=>row.slice());
+      newRows[nr.r1][nr.c1]=joined.join(' ');
+      for(let r=nr.r1;r<=nr.r2;r++)for(let c=nr.c1;c<=nr.c2;c++){if(r!==nr.r1||c!==nr.c1)newRows[r][c]='';}
+      updateBlock(block.id,{rows:newRows,merges:[...merges,{r1:nr.r1,c1:nr.c1,r2:nr.r2,c2:nr.c2}]});
+      setSelRange({r1:nr.r1,c1:nr.c1,r2:nr.r1,c2:nr.c1});
+    };
+    const unmergeAt=(ri,ci)=>{
+      const m=mergeAt(ri,ci);if(!m)return;
+      updateBlock(block.id,{merges:merges.filter(x=>x!==m)});
+    };
+    const remapMergeRows=(mapFn)=>merges.map(m=>({...m,r1:mapFn(m.r1),r2:mapFn(m.r2)}));
+    const remapMergeCols=(mapFn)=>merges.map(m=>({...m,c1:mapFn(m.c1),c2:mapFn(m.c2)}));
     const insertRowAfter=(ri)=>{
       const newRows=[...rows.slice(0,ri+1),new Array(ncols).fill(''),...rows.slice(ri+1)];
       const newRH=rowHeights?[...rowHeights.slice(0,ri+1),36,...rowHeights.slice(ri+1)]:null;
-      const newBg=remapBgRows(r=>r>ri?r+1:r);
-      updateBlock(block.id,{rows:newRows,rowHeights:newRH,cellBg:newBg});
+      const shift=r=>r>ri?r+1:r;
+      updateBlock(block.id,{rows:newRows,rowHeights:newRH,cellBg:remapMapRows(cellBg,shift),cellFg:remapMapRows(cellFg,shift),merges:remapMergeRows(shift)});
     };
     const insertColAfter=(ci)=>{
       const newRows=rows.map(row=>[...row.slice(0,ci+1),'',...row.slice(ci+1)]);
       const newCW=colWidths?[...colWidths.slice(0,ci+1),120,...colWidths.slice(ci+1)]:null;
       const newCA=colAlign.length?[...colAlign.slice(0,ci+1),'left',...colAlign.slice(ci+1)]:colAlign;
-      const newBg=remapBgCols(c=>c>ci?c+1:c);
-      updateBlock(block.id,{rows:newRows,colWidths:newCW,colAlign:newCA,cellBg:newBg});
+      const shift=c=>c>ci?c+1:c;
+      updateBlock(block.id,{rows:newRows,colWidths:newCW,colAlign:newCA,cellBg:remapMapCols(cellBg,shift),cellFg:remapMapCols(cellFg,shift),merges:remapMergeCols(shift)});
     };
     const moveRow=(from,to)=>{
       if(from===to||from==null)return;
@@ -3770,8 +3825,8 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
       if(rowHeights){const rh=rowHeights.slice();const[h]=rh.splice(from,1);rh.splice(to,0,h);newRH=rh;}
       const order=rows.map((_,i)=>i);const[oi]=order.splice(from,1);order.splice(to,0,oi);
       const oldToNew={};order.forEach((oldIdx,newIdx)=>{oldToNew[oldIdx]=newIdx;});
-      const newBg=remapBgRows(r=>oldToNew[r]!==undefined?oldToNew[r]:r);
-      updateBlock(block.id,{rows:arr,rowHeights:newRH,cellBg:newBg});
+      const mapFn=r=>oldToNew[r]!==undefined?oldToNew[r]:r;
+      updateBlock(block.id,{rows:arr,rowHeights:newRH,cellBg:remapMapRows(cellBg,mapFn),cellFg:remapMapRows(cellFg,mapFn),merges:remapMergeRows(mapFn)});
     };
     const moveCol=(from,to)=>{
       if(from===to||from==null)return;
@@ -3782,8 +3837,8 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
       if(colAlign.length){const ca=colAlign.slice();const[a]=ca.splice(from,1);ca.splice(to,0,a);newCA=ca;}
       const order=Array.from({length:ncols},(_,i)=>i);const[oi]=order.splice(from,1);order.splice(to,0,oi);
       const oldToNew={};order.forEach((oldIdx,newIdx)=>{oldToNew[oldIdx]=newIdx;});
-      const newBg=remapBgCols(c=>oldToNew[c]!==undefined?oldToNew[c]:c);
-      updateBlock(block.id,{rows:newRows,colWidths:newCW,colAlign:newCA,cellBg:newBg});
+      const mapFn=c=>oldToNew[c]!==undefined?oldToNew[c]:c;
+      updateBlock(block.id,{rows:newRows,colWidths:newCW,colAlign:newCA,cellBg:remapMapCols(cellBg,mapFn),cellFg:remapMapCols(cellFg,mapFn),merges:remapMergeCols(mapFn)});
     };
     const focusCell=(ri,ci,edge)=>{
       const target=tblRef.current&&tblRef.current.querySelector(`textarea[data-cellpos="${ri}-${ci}"]`);
@@ -3824,8 +3879,30 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
         <span style={{width:3,height:3,borderRadius:'50%',backgroundColor:'#D2D2D8'}}/>
       </div>
     );
+    const TBL_FG_COLORS=['#333333','#E24B4A','#2563EB','#1D9E75','#D97706','#7C3AED'];
     return(
       <div style={{flex:1,minWidth:0,margin:'4px 0'}} onMouseDown={()=>onFocusCb(block.id)}>
+        {selIsMulti&&(
+          <div onMouseDown={e=>e.stopPropagation()} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 9px',marginBottom:4,
+            backgroundColor:'#F5F5F3',borderRadius:7,flexWrap:'wrap'}}>
+            <span style={{fontSize:10.5,color:'#8A8A93',fontWeight:600}}>{nr.r2-nr.r1+1}×{nr.c2-nr.c1+1}칸 선택</span>
+            <div style={{width:1,height:14,backgroundColor:'#DEDEDE'}}/>
+            <span style={{fontSize:9.5,color:'#AAA'}}>배경</span>
+            {TBL_CELL_COLORS.map((c,i)=>(
+              <div key={i} onClick={()=>bulkSetBg(c)} title={c?'':'기본'}
+                style={{width:15,height:15,borderRadius:4,cursor:'pointer',backgroundColor:c||'#fff',
+                  border:c?'0.5px solid rgba(0,0,0,0.1)':'0.5px dashed #CCC'}}/>
+            ))}
+            <div style={{width:1,height:14,backgroundColor:'#DEDEDE'}}/>
+            <span style={{fontSize:9.5,color:'#AAA'}}>글자색</span>
+            {TBL_FG_COLORS.map(c=>(
+              <button key={c} onClick={()=>bulkSetFg(c)} style={{width:16,height:16,borderRadius:4,border:'none',backgroundColor:'transparent',cursor:'pointer',padding:0,fontSize:12,fontWeight:800,color:c,fontFamily:'inherit'}}>A</button>
+            ))}
+            <div style={{width:1,height:14,backgroundColor:'#DEDEDE'}}/>
+            <button onClick={mergeSelected} style={tbtn}>⛙ 셀 병합</button>
+            <button onClick={()=>setSelRange(null)} style={{...tbtn,marginLeft:'auto'}}>선택 해제</button>
+          </div>
+        )}
         <div style={{overflowX:'auto'}}>
           <table ref={tblRef} style={{borderCollapse:'collapse',width:colWidths?'auto':'100%',tableLayout:colWidths?'fixed':'auto'}}>
             {colWidths&&<colgroup><col style={{width:16}}/>{colWidths.map((w,i)=><col key={i} style={{width:w}}/>)}<col style={{width:32}}/></colgroup>}
@@ -3838,10 +3915,11 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
                     onDragEnd={()=>{setDragColIdx(null);setOverColIdx(null);}}
                     onDragOver={e=>{e.preventDefault();setOverColIdx(ci);}}
                     onDrop={e=>{e.preventDefault();moveCol(dragColIdx,ci);setDragColIdx(null);setOverColIdx(null);}}
+                    onClick={()=>selectCol(ci)}
                     style={{border:'none',padding:0,height:14,position:'relative',
                       backgroundColor:overColIdx===ci&&dragColIdx!==ci?'var(--acc-bg)':'transparent'}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab'}} title="드래그해서 열 이동"><Dot2/></div>
-                    <button onMouseDown={e=>e.stopPropagation()} onClick={()=>insertColAfter(ci)} title="오른쪽에 열 삽입"
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab'}} title="드래그해서 열 이동 · 클릭해서 열 전체 선택"><Dot2/></div>
+                    <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();insertColAfter(ci);}} title="오른쪽에 열 삽입"
                       style={{position:'absolute',top:-1,right:-8,width:12,height:12,borderRadius:'50%',fontSize:9,lineHeight:1,
                         color:'#A8A8B0',border:'0.5px solid #E0E0E6',backgroundColor:'#fff',cursor:'pointer',padding:0,zIndex:4}}>＋</button>
                   </td>
@@ -3854,20 +3932,29 @@ function BlockItem({block,bIdx,refsMap,updateBlock,onEnterKey,onBackspaceKey,onT
                   onDrop={e=>{if(dragRowIdx!=null){e.preventDefault();moveRow(dragRowIdx,ri);setDragRowIdx(null);setOverRowIdx(null);}}}
                   style={{boxShadow:overRowIdx===ri&&dragRowIdx!==ri?'inset 0 2px 0 var(--acc)':'none'}}>
                   <td style={{border:'none',padding:0,width:16}}>
-                    <div draggable title="드래그해서 행 이동"
+                    <div draggable title="드래그해서 행 이동 · 클릭해서 행 전체 선택"
                       onDragStart={e=>{setDragRowIdx(ri);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','');}catch(err){}}}
                       onDragEnd={()=>{setDragRowIdx(null);setOverRowIdx(null);}}
+                      onClick={()=>selectRow(ri)}
                       style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',cursor:'grab'}}>
                       <Dot2 vertical/>
                     </div>
                   </td>
-                  {row.map((cell,ci)=>(
-                    <TblTd key={ci} ri={ri} ci={ci} cell={cell} header={ri===0} ncols={ncols} rowsLen={rows.length}
-                      bg={cellBg[ri+'-'+ci]} align={colAlign[ci]||'left'} rowH={rowHeights?rowHeights[ri]:undefined}
-                      onChange={v=>setCell(ri,ci,v)} onNav={dir=>onCellNav(ri,ci,dir)}
-                      onSetBg={c=>setCellBg(ri,ci,c)} onSetAlign={al=>setColAlign(ci,al)}
-                      onColResize={e=>startColResize(ci,e)} onRowResize={e=>startRowResize(ri,e)}/>
-                  ))}
+                  {row.map((cell,ci)=>{
+                    const m=mergeAt(ri,ci);
+                    if(m&&!(m.r1===ri&&m.c1===ci))return null; // 병합에 가려진 칸은 렌더 생략
+                    return(
+                      <TblTd key={ci} ri={ri} ci={ci} cell={cell} header={ri===0} ncols={ncols} rowsLen={rows.length}
+                        bg={cellBg[ri+'-'+ci]} fg={cellFg[ri+'-'+ci]} align={colAlign[ci]||'left'} rowH={rowHeights?rowHeights[ri]:undefined}
+                        rowSpan={m?m.r2-m.r1+1:1} colSpan={m?m.c2-m.c1+1:1} merged={!!m}
+                        selected={selIsMulti&&inSel(ri,ci)}
+                        onChange={v=>setCell(ri,ci,v)} onNav={dir=>onCellNav(ri,ci,dir)}
+                        onSetBg={c=>setCellBg(ri,ci,c)} onSetAlign={al=>setColAlign(ci,al)}
+                        onColResize={e=>startColResize(ci,e)} onRowResize={e=>startRowResize(ri,e)}
+                        onCellDown={()=>onCellDown(ri,ci)} onCellEnter={()=>onCellEnter(ri,ci)}
+                        onUnmerge={m?()=>unmergeAt(ri,ci):null}/>
+                    );
+                  })}
                   <td style={{border:'none',width:32,paddingLeft:3}}>
                     <div style={{display:'flex',alignItems:'center',gap:3}}>
                       <button onClick={()=>insertRowAfter(ri)} title="아래에 행 삽입"
