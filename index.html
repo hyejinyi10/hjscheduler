@@ -1692,6 +1692,7 @@ function ColorPickerPopover({selectedColor,onSelect,onClose,style={},colors=PROJ
 
 function IdeaPageModal({initialNote,onClose}){
   const{state,dispatch}=useStore();
+  const{isMobile}=useLayout();
   const isNew=!initialNote?.id||!state.ideaNotes?.find(n=>n.id===initialNote.id);
   const[note,setNote]=React.useState(()=>initialNote||{
     id:uid(),title:'',tag:'',
@@ -1727,7 +1728,7 @@ function IdeaPageModal({initialNote,onClose}){
   return(
     <div onClick={e=>{if(e.target===e.currentTarget)tryClose();}}
       style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.45)',zIndex:9100,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
-      <div style={{width:680,maxWidth:'94vw',maxHeight:'88vh',minWidth:420,minHeight:380,backgroundColor:'#fff',borderRadius:16,
+      <div style={{width:680,maxWidth:isMobile?'96vw':'94vw',maxHeight:isMobile?'92vh':'88vh',minWidth:isMobile?0:420,minHeight:isMobile?0:380,backgroundColor:'#fff',borderRadius:16,
         display:'flex',flexDirection:'column',overflow:'hidden',
         boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',animation:'popIn 0.18s ease'}}>
         <div style={{padding:'20px 24px 14px',borderBottom:'0.5px solid #F0F0F0',flexShrink:0}}>
@@ -3923,6 +3924,7 @@ function BlockEditor({blocks,onBlocksChange}){
 }
 function MeetingNoteModal({initialNote,onClose,inline=false}){
   const{state,dispatch}=useStore();
+  const{isMobile}=useLayout();
   const isNew=!initialNote?.id||!state.meetingNotes?.find(n=>n.id===initialNote.id);
   const today=new Date().toISOString().split('T')[0];
   const[note,setNote]=React.useState(()=>initialNote||{
@@ -4086,7 +4088,7 @@ function MeetingNoteModal({initialNote,onClose,inline=false}){
   return(
     <div style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{width:760,maxWidth:'96vw',maxHeight:'92vh',minWidth:520,minHeight:380,resize:'both',backgroundColor:'#fff',
+      <div style={{width:760,maxWidth:isMobile?'96vw':'96vw',maxHeight:isMobile?'92vh':'92vh',minWidth:isMobile?0:520,minHeight:isMobile?0:380,resize:isMobile?'none':'both',backgroundColor:'#fff',
         borderRadius:16,overflow:'auto',display:'flex',flexDirection:'column',
         boxShadow:'0 0 0 1px rgba(15,15,35,0.06), 0 14px 32px rgba(15,15,35,0.12), 0 36px 80px rgba(15,15,35,0.18)',animation:'popIn 0.18s ease'}}>
         {body}
