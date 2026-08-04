@@ -290,6 +290,7 @@ function reducer(state,action){
     case 'ADD_HIGHLIGHT_PREFILLED':return{...state,monthlyHighlights:[...state.monthlyHighlights,{id:uid(),projectId:action.projectId||null,date:action.date||'',text:action.text||'',yearMonth:action.yearMonth||''}]};
     case 'UPDATE_HIGHLIGHT':return{...state,monthlyHighlights:state.monthlyHighlights.map(h=>h.id===action.id?{...h,...action.updates}:h)};
     case 'DELETE_HIGHLIGHT':return{...state,monthlyHighlights:state.monthlyHighlights.filter(h=>h.id!==action.id)};
+    case 'BULK_MOVE_HIGHLIGHTS':return{...state,monthlyHighlights:state.monthlyHighlights.map(h=>(!h.done&&action.fromYMs.includes(h.yearMonth))?{...h,yearMonth:action.toYM,carried:true}:h)};
     case 'REORDER_PROJECTS':return{...state,projects:action.projects};
     case 'UPDATE_MEMOS':return{...state,projectMemos:{...state.projectMemos,[action.projectId]:action.lines}};
     case 'ADD_MEMO':{const newMemo={id:uid(),title:action.title||'메모',body:'',collapsed:false};return{...state,projectMemos:{...state.projectMemos,[action.projectId]:[...(getMemoList(state.projectMemos[action.projectId])||[]),newMemo]}};}
@@ -880,6 +881,18 @@ function StoreProvider({children}){
     Object.entries(toMonday).forEach(([mk,dates])=>rawDispatch({type:'BULK_MOVE_TODOS',fromDates:dates,toDate:mk}));
     localStorage.setItem('lastTodoAutoMove',today);
   },[rawDispatch]);
+  // 주요일정 자동 이월: 매달 1회, 지난달까지의 미완료 주요일정을 이번달로 이동
+  const runHighlightAutoMove=useCallback((highlightsArr)=>{
+    const now=new Date();
+    const curYM=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const lastRun=localStorage.getItem('lastHighlightAutoMove');
+    if(lastRun===curYM)return;
+    const list=highlightsArr||[];
+    const pastYMs=[...new Set(list.filter(h=>!h.done&&h.yearMonth&&h.yearMonth<curYM).map(h=>h.yearMonth))];
+    if(pastYMs.length>0)rawDispatch({type:'BULK_MOVE_HIGHLIGHTS',fromYMs:pastYMs,toYM:curYM});
+    rawDispatch({type:'SET_HL_MONTH',hlYear:now.getFullYear(),hlMonth:now.getMonth()});
+    localStorage.setItem('lastHighlightAutoMove',curYM);
+  },[rawDispatch]);
   // Cloud sync: load on mount (+ 생일→기념일 마이그레이션)
   useEffect(()=>{
     const doMigrate=(layers)=>{
@@ -892,16 +905,18 @@ function StoreProvider({children}){
       cloudLoadedRef.current=true;
       doMigrate(stateRef.current.customLayers);
       runTodoAutoMove(stateRef.current.todos);
+      runHighlightAutoMove(stateRef.current.monthlyHighlights);
       return;
     }
     cloudLoad(apiKey,binId).then(s=>{
-      if(s){rawDispatch({type:'RESTORE_FULL',state:s});doMigrate(s.customLayers);runTodoAutoMove(s.todos||stateRef.current.todos);}
-      else{doMigrate(stateRef.current.customLayers);runTodoAutoMove(stateRef.current.todos);}
+      if(s){rawDispatch({type:'RESTORE_FULL',state:s});doMigrate(s.customLayers);runTodoAutoMove(s.todos||stateRef.current.todos);runHighlightAutoMove(s.monthlyHighlights||stateRef.current.monthlyHighlights);}
+      else{doMigrate(stateRef.current.customLayers);runTodoAutoMove(stateRef.current.todos);runHighlightAutoMove(stateRef.current.monthlyHighlights);}
       localStorage.setItem(CLOUD_STATUS,'ok');
     }).catch(()=>{
       localStorage.setItem(CLOUD_STATUS,'error');
       doMigrate(stateRef.current.customLayers);
       runTodoAutoMove(stateRef.current.todos);
+      runHighlightAutoMove(stateRef.current.monthlyHighlights);
     }).finally(()=>{
       // 로드 성공/실패 모두 완료 후 저장 허용
       cloudLoadedRef.current=true;
@@ -2694,17 +2709,26 @@ function TopBar(){
 function HighlightItem({highlight,project}){
   const{dispatch}=useStore();const[hovered,setHovered]=useState(false);const[pickerOpen,setPickerOpen]=useState(false);const barColor=project?project.color:'#E0E0E0';const textRef=useRef(null);
   useEffect(()=>{if(!highlight.text&&!highlight.date)textRef.current?.focus();},[]);
+  const done=!!highlight.done;
   return(
     <div style={{position:'relative',marginBottom:2}} onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}>
-      <div style={{display:'flex',alignItems:'stretch',borderRadius:4,overflow:'hidden',border:'0.5px solid #F0F0F0'}}>
-        <div style={{flexShrink:0}}>
-          <div onClick={()=>setPickerOpen(v=>!v)} style={{width:3,backgroundColor:barColor,minHeight:32,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.opacity='0.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}/>
-        </div>
-        <div style={{flex:1,padding:'4px 7px',display:'flex',flexDirection:'column',gap:2}}>
-          {project&&<span style={{fontSize:10,color:barColor,fontWeight:600,lineHeight:1.3}}>{project.name}</span>}
+      <div style={{display:'flex',alignItems:'stretch',borderRadius:4,overflow:'hidden',border:'0.5px solid #F0F0F0',opacity:done?0.55:1}}>
+        <button onClick={()=>dispatch({type:'UPDATE_HIGHLIGHT',id:highlight.id,updates:{done:!done}})} title={done?'완료 취소':'완료 표시'}
+          style={{width:16,flexShrink:0,border:'none',cursor:'pointer',backgroundColor:barColor,
+            display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <span style={{width:10,height:10,borderRadius:3,flexShrink:0,
+            border:`1.2px solid ${done?'#fff':'rgba(255,255,255,0.9)'}`,backgroundColor:done?'#fff':'transparent',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:7,fontWeight:800,color:barColor,lineHeight:1}}>{done?'✓':''}</span>
+        </button>
+        <div style={{flex:1,padding:'4px 7px',display:'flex',flexDirection:'column',gap:2,minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:5}}>
+            <span onClick={()=>setPickerOpen(v=>!v)} title="프로젝트 지정" style={{width:6,height:6,borderRadius:'50%',backgroundColor:barColor,cursor:'pointer',flexShrink:0}}/>
+            {project&&<span style={{fontSize:10,color:barColor,fontWeight:600,lineHeight:1.3}}>{project.name}</span>}
+            {highlight.carried&&<span title="완료 못해서 이번 달로 이월됨" style={{fontSize:8.5,color:'#B08A3E',backgroundColor:'#FFF3D6',borderRadius:6,padding:'0.5px 5px',fontWeight:600}}>↻ 이월</span>}
+          </div>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <input value={highlight.date} onChange={e=>dispatch({type:'UPDATE_HIGHLIGHT',id:highlight.id,updates:{date:e.target.value}})} placeholder="날짜" style={{width:48,fontSize:10,color:'#AAA',borderBottom:'0.5px solid #F0F0F0',flexShrink:0}}/>
-            <input ref={textRef} value={highlight.text} onChange={e=>dispatch({type:'UPDATE_HIGHLIGHT',id:highlight.id,updates:{text:e.target.value}})} placeholder="내용" style={{flex:1,fontSize:11,color:'#333',minWidth:0}}/>
+            <input ref={textRef} value={highlight.text} onChange={e=>dispatch({type:'UPDATE_HIGHLIGHT',id:highlight.id,updates:{text:e.target.value}})} placeholder="내용" style={{flex:1,fontSize:11,color:done?'#A8A8A4':'#333',minWidth:0,textDecoration:done?'line-through':'none'}}/>
           </div>
         </div>
       </div>
