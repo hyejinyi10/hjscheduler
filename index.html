@@ -193,6 +193,18 @@ const shadesOf=(hex)=>{
 
 // ─── DATE UTILS ──────────────────────────────
 const toDateKey = (d)=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return`${y}-${m}-${day}`;};
+const isEventVisible=(e,state)=>{
+  if(e.category==='work'&&!state.workVisible)return false;
+  if(e.category==='personal'&&!state.personalVisible)return false;
+  if(e.isOutlook&&state.outlookVisible===false)return false;
+  const cl=(state.customLayers||[]).find(l=>l.id===e.category);
+  if(cl&&cl.visible===false)return false;
+  if(e.projectId){
+    const p=(state.projects||[]).find(pr=>pr.id===e.projectId);
+    if(p&&p.hidden)return false;
+  }
+  return true;
+};
 const getWeekStart=(off=0)=>{const t=new Date();t.setHours(0,0,0,0);const dow=t.getDay(),toMon=dow===0?-6:1-dow,m=new Date(t);m.setDate(t.getDate()+toMon+off*7);return m;};
 const getWeekDates=(off=0)=>{const mon=getWeekStart(off);return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});};
 const isToday=(date)=>toDateKey(date)===toDateKey(new Date());
@@ -2928,14 +2940,7 @@ function WeeklyAgenda(){
   const{state}=useStore();
   const catStyle=useDynCatStyle();
   const projById=React.useMemo(()=>Object.fromEntries((state.projects||[]).map(p=>[p.id,p])),[state.projects]);
-  const visOk=(e)=>{
-    if(e.category==='work')return state.workVisible;
-    if(e.category==='personal')return state.personalVisible;
-    if(e.isOutlook)return state.outlookVisible!==false;
-    const cl=(state.customLayers||[]).find(l=>l.id===e.category);
-    if(cl)return cl.visible!==false;
-    return true;
-  };
+  const visOk=(e)=>isEventVisible(e,state);
   const days=React.useMemo(()=>{
     const today=new Date();today.setHours(12,0,0,0);
     const dowKr=['일','월','화','수','목','금','토'];
@@ -3005,11 +3010,15 @@ function ProjectItem({project,dragId,dragOverId,onDragStart,onDragEnd,onDragOver
       {isDragOver&&<div style={{position:'absolute',top:0,left:0,right:0,height:2,backgroundColor:project.color,borderRadius:1,zIndex:2}}/>}
       <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:2}}>
         <span title="드래그해서 순서 변경" style={{fontSize:12,color:hovered?'#C8C8C8':'transparent',cursor:'grab',flexShrink:0,lineHeight:1,transition:'color 0.15s',userSelect:'none'}}>⠿</span>
+        <button onClick={()=>dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{hidden:!project.hidden}})} title={project.hidden?'캘린더에 표시':'캘린더에서 숨기기'}
+          style={{width:11,height:11,borderRadius:3,flexShrink:0,border:`1.3px solid ${project.hidden?'#D8D8D8':myColor}`,
+            backgroundColor:project.hidden?'transparent':myColor,display:'flex',alignItems:'center',justifyContent:'center',
+            fontSize:7,color:'#fff',lineHeight:1,cursor:'pointer'}}>{!project.hidden?'✓':''}</button>
         <div style={{position:'relative',flexShrink:0}}>
           <div onClick={()=>setCpOpen(v=>!v)} title="프로젝트 색 변경 (이 프로젝트만 바뀜)" style={{width:9,height:9,borderRadius:'50%',backgroundColor:myColor,cursor:'pointer',border:`1.5px solid ${myColor}`,transition:'transform 0.1s'}} onMouseEnter={e=>e.currentTarget.style.transform='scale(1.2)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}/>
           {cpOpen&&<ColorPickerPopover selectedColor={myColor} colors={shadesOf(baseColor)} onSelect={c=>dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{color:c}})} onClose={()=>setCpOpen(false)} style={{top:12,left:0}}/>}
         </div>
-        {editing?<input autoFocus value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>{if(e.key==='Enter')saveName();if(e.key==='Escape'){setNameVal(project.name);setEditing(false);}}} style={{flex:1,fontSize:13,fontWeight:500,color:myColor,borderBottom:`0.5px solid ${myColor}`,paddingBottom:1,minWidth:0}}/>:<span onDoubleClick={()=>{setNameVal(project.name);setEditing(true);}} style={{flex:1,fontSize:13,fontWeight:500,color:myColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text',minWidth:0}}>{project.name}</span>}
+        {editing?<input autoFocus value={nameVal} onChange={e=>setNameVal(e.target.value)} onBlur={saveName} onKeyDown={e=>{if(e.key==='Enter')saveName();if(e.key==='Escape'){setNameVal(project.name);setEditing(false);}}} style={{flex:1,fontSize:13,fontWeight:500,color:myColor,borderBottom:`0.5px solid ${myColor}`,paddingBottom:1,minWidth:0}}/>:<span onDoubleClick={()=>{setNameVal(project.name);setEditing(true);}} style={{flex:1,fontSize:13,fontWeight:500,color:project.hidden?'#C4C4C8':myColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text',minWidth:0}}>{project.name}</span>}
         <button onClick={()=>dispatch({type:'UPDATE_PROJECT',id:project.id,updates:{layer:project.layer==='work'?'personal':'work'}})} title={project.layer==='personal'?'개인→업무':'업무→개인'} style={{fontSize:10,padding:'1px 4px',borderRadius:3,flexShrink:0,border:'0.5px solid #E0E0E0',color:project.layer==='personal'?dynCat.personal.text:dynCat.work.text,backgroundColor:project.layer==='personal'?dynCat.personal.bg:dynCat.work.bg}}>{project.layer==='personal'?(state.personalLabel||'개인'):(state.workLabel||'업무')}</button>
         {hovered&&!editing&&<button onClick={()=>dispatch({type:'DELETE_PROJECT',id:project.id})} style={{fontSize:13,color:'#CCC',lineHeight:1,flexShrink:0,padding:'1px 2px'}} onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>}
       </div>
@@ -4715,7 +4724,7 @@ function LeftPanel(){
 // ─── EVENT POPOVER ───────────────────────────
 
 function EventPopover({date,onClose}){
-  const{state,dispatch}=useStore();const catStyle=useDynCatStyle();const showToast=useToast();const[form,setForm]=useState({time:'',title:'',category:'work',projectId:null,isHighlight:false,recurring:false,recurType:'weekly',recurDay:0,recurWeeks:12});const titleRef=useRef(null);
+  const{state,dispatch}=useStore();const catStyle=useDynCatStyle();const showToast=useToast();const[form,setForm]=useState({time:'',endTime:'',title:'',category:'work',projectId:null,isHighlight:false,recurring:false,recurType:'weekly',recurDay:0,recurWeeks:12});const titleRef=useRef(null);
   useEffect(()=>{setTimeout(()=>titleRef.current?.focus(),60);},[]);
   useEffect(()=>{const h=(e)=>{if(e.key==='Escape')onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
   const dateObj=new Date(date+'T00:00:00');
@@ -4723,10 +4732,10 @@ function EventPopover({date,onClose}){
   const handleSave=()=>{
     if(!form.title.trim())return;
     if(!form.recurring){
-      dispatch({type:'ADD_EVENT',event:{date,time:form.time.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId,isOutlook:false}});
+      dispatch({type:'ADD_EVENT',event:{date,time:form.time.trim()||undefined,endTime:form.endTime.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId,isOutlook:false}});
     } else if(form.recurType==='yearly'){
       const dObj=new Date(date+'T00:00:00');
-      for(let y=0;y<5;y++){const d=new Date(dObj);d.setFullYear(dObj.getFullYear()+y);dispatch({type:'ADD_EVENT',event:{date:toDateKey(d),time:form.time.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId,isOutlook:false,isRecurring:true}});}
+      for(let y=0;y<5;y++){const d=new Date(dObj);d.setFullYear(dObj.getFullYear()+y);dispatch({type:'ADD_EVENT',event:{date:toDateKey(d),time:form.time.trim()||undefined,endTime:form.endTime.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId,isOutlook:false,isRecurring:true}});}
     } else {
       const dObj=new Date(date+'T00:00:00');const todayDow=(dObj.getDay()+6)%7;
       const weekStart=new Date(dObj);weekStart.setDate(dObj.getDate()-todayDow);
@@ -4734,7 +4743,7 @@ function EventPopover({date,onClose}){
       if(toDateKey(first)<toDateKey(dObj))first.setDate(first.getDate()+7);
       for(let i=0;i<(form.recurWeeks||12);i++){
         const d=new Date(first);d.setDate(first.getDate()+i*7);
-        dispatch({type:'ADD_EVENT',event:{date:toDateKey(d),time:form.time.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId,isOutlook:false,isRecurring:true}});
+        dispatch({type:'ADD_EVENT',event:{date:toDateKey(d),time:form.time.trim()||undefined,endTime:form.endTime.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId,isOutlook:false,isRecurring:true}});
       }
     }
     if(form.isHighlight&&!form.recurring){
@@ -4756,7 +4765,10 @@ function EventPopover({date,onClose}){
           {['work','personal'].map(cat=>{const s=catStyle[cat];const active=form.category===cat;const lbl=cat==='work'?(state.workLabel||'업무'):(state.personalLabel||'개인');return(<button key={cat} onClick={()=>setForm(f=>({...f,category:cat}))} style={{flex:1,padding:'5px 0',borderRadius:6,fontSize:12,fontWeight:500,border:`0.5px solid ${active?s.border:'#EBEBEB'}`,backgroundColor:active?s.bg:'#F8F8F8',color:active?s.text:'#ACACB4',transition:'all 0.15s'}}>{lbl}</button>);})}
           {(state.customLayers||[]).filter(l=>(state.layerOrder||[]).includes(l.id)).map(l=>{const active=form.category===l.id;return(<button key={l.id} onClick={()=>setForm(f=>({...f,category:l.id}))} style={{flex:1,padding:'5px 0',borderRadius:6,fontSize:12,fontWeight:500,border:`0.5px solid ${active?lighten(l.color,0.55):'#EBEBEB'}`,backgroundColor:active?lighten(l.color,0.88):'#F8F8F8',color:active?l.color:'#ACACB4',transition:'all 0.15s'}}>{l.name}</button>);})}
         </div>
-        <div style={{marginBottom:12}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:4,letterSpacing:'0.3px'}}>시간 (선택)</label><input value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} placeholder="예) 14:00" style={{width:'100%',fontSize:13,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:4}}/></div>
+        <div style={{marginBottom:12,display:'flex',gap:10}}>
+          <div style={{flex:1}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:4,letterSpacing:'0.3px'}}>시간 (선택)</label><input value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} placeholder="예) 14:00" style={{width:'100%',fontSize:13,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:4}}/></div>
+          <div style={{flex:1}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:4,letterSpacing:'0.3px'}}>종료 시간 (선택)</label><input value={form.endTime} onChange={e=>setForm(f=>({...f,endTime:e.target.value}))} placeholder="예) 15:00" style={{width:'100%',fontSize:13,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:4}}/></div>
+        </div>
         <div style={{marginBottom:14}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:4,letterSpacing:'0.3px'}}>제목</label><input ref={titleRef} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter')handleSave();if(e.key==='Escape')onClose();}} placeholder="일정 제목" style={{width:'100%',fontSize:14,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:4,fontWeight:500}}/></div>
         {state.projects.filter(p=>!p.layer||p.layer===form.category).length>0&&<div style={{marginBottom:14}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:5,letterSpacing:'0.3px'}}>프로젝트</label><div style={{display:'flex',gap:4,flexWrap:'wrap'}}><button onClick={()=>setForm(f=>({...f,projectId:null}))} style={{fontSize:11,padding:'2px 7px',borderRadius:10,border:`0.5px solid ${!form.projectId?'#DDD':'#EBEBEB'}`,backgroundColor:!form.projectId?'#F5F5F5':'transparent',color:!form.projectId?'#666':'#CCC'}}>없음</button>{state.projects.filter(p=>!p.layer||p.layer===form.category).map(p=><button key={p.id} onClick={()=>setForm(f=>({...f,projectId:p.id}))} style={{fontSize:11,padding:'2px 8px',borderRadius:10,border:`0.5px solid ${form.projectId===p.id?p.color:'#EBEBEB'}`,backgroundColor:form.projectId===p.id?lighten(p.color):'transparent',color:form.projectId===p.id?p.color:'#A2A2AA',display:'flex',alignItems:'center',gap:4}}><span style={{width:5,height:5,borderRadius:'50%',backgroundColor:p.color,display:'inline-block',flexShrink:0}}/>{p.name}</button>)}</div></div>}
         <div style={{marginBottom:12}}>
@@ -4884,7 +4896,7 @@ function MeetingNotePreviewPane({note,onEdit}){
 function EventDetailPopover({event,onClose,onDelete,onUpdate,onOpenNote}){
   const{state,dispatch}=useStore();const catStyle=useDynCatStyle();const showToast=useToast();
   const[form,setForm]=useState({
-    time:event.time||'',title:event.title||'',category:event.category||'work',
+    time:event.time||'',endTime:event.endTime||'',title:event.title||'',category:event.category||'work',
     projectId:event.projectId||null,isHighlight:false,
     recurring:false,recurType:'weekly',
     recurDay:(()=>{const d=new Date(event.date+'T00:00:00');return(d.getDay()+6)%7;})(),
@@ -4897,7 +4909,7 @@ function EventDetailPopover({event,onClose,onDelete,onUpdate,onOpenNote}){
   const handleSave=()=>{
     if(!form.title.trim())return;
     if(!form.recurring){
-      onUpdate&&onUpdate({time:form.time.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId});
+      onUpdate&&onUpdate({time:form.time.trim()||undefined,endTime:form.endTime.trim()||undefined,title:form.title.trim(),category:form.category,projectId:form.projectId});
       /* sync linked meeting note */
       if(event.meetingNoteId){const note=(state.meetingNotes||[]).find(n=>n.id===event.meetingNoteId);if(note){dispatch({type:'UPDATE_MEETING_NOTE',id:note.id,updates:{title:form.title.trim(),date:event.date,time:form.time.trim()||note.time||'',category:form.category,projectId:form.projectId,updatedAt:new Date().toISOString()}});}}
     } else {
@@ -4969,7 +4981,10 @@ function EventDetailPopover({event,onClose,onDelete,onUpdate,onOpenNote}){
           {(state.customLayers||[]).filter(l=>(state.layerOrder||[]).includes(l.id)).map(l=>{const active=form.category===l.id;return(<button key={l.id} onClick={()=>setForm(f=>({...f,category:l.id,projectId:null}))} style={{flex:1,padding:'5px 0',borderRadius:6,fontSize:12,fontWeight:500,border:`0.5px solid ${active?lighten(l.color,0.55):'#EBEBEB'}`,backgroundColor:active?lighten(l.color,0.88):'#F8F8F8',color:active?l.color:'#ACACB4'}}>{l.name}</button>);})}
         </div>
         {/* Time */}
-        <div style={{marginBottom:10}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:3}}>시간</label><input value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} placeholder="예) 14:00" style={{width:'100%',fontSize:13,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:3}}/></div>
+        <div style={{marginBottom:10,display:'flex',gap:10}}>
+          <div style={{flex:1}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:3}}>시간</label><input value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} placeholder="예) 14:00" style={{width:'100%',fontSize:13,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:3}}/></div>
+          <div style={{flex:1}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:3}}>종료 시간</label><input value={form.endTime} onChange={e=>setForm(f=>({...f,endTime:e.target.value}))} placeholder="예) 15:00" style={{width:'100%',fontSize:13,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:3}}/></div>
+        </div>
         {/* Title */}
         <div style={{marginBottom:12}}><label style={{fontSize:11,color:'#8E8E96',display:'block',marginBottom:3}}>제목</label><input autoFocus value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter'&&!form.recurring)handleSave();if(e.key==='Escape')onClose();}} style={{width:'100%',fontSize:14,color:'#333',borderBottom:'0.5px solid #EDEDEA',paddingBottom:3,fontWeight:500}}/></div>
         {/* Project */}
@@ -5747,16 +5762,10 @@ function CalendarSection(){
   const eventsByDate=useMemo(()=>{
     const m={};
     (state.weeklyEvents||[]).forEach(e=>{
-      let visible=false;
-      if(e.category==='work'&&state.workVisible)visible=true;
-      if(e.category==='personal'&&state.personalVisible)visible=true;
-      if(e.isOutlook&&state.outlookVisible!==false)visible=true;
-      const cl=(state.customLayers||[]).find(l=>l.id===e.category);
-      if(cl&&cl.visible!==false)visible=true;
-      if(visible){if(!m[e.date])m[e.date]=[];m[e.date].push(e);}
+      if(isEventVisible(e,state)){if(!m[e.date])m[e.date]=[];m[e.date].push(e);}
     });
     return m;
-  },[state.weeklyEvents,state.workVisible,state.personalVisible,state.outlookVisible,state.customLayers]);
+  },[state.weeklyEvents,state.workVisible,state.personalVisible,state.outlookVisible,state.customLayers,state.projects]);
 
   const visibleMonthLabel=navLabel||`${navYear}년 ${navMonth+1}월`;
 
