@@ -193,6 +193,35 @@ const shadesOf=(hex)=>{
 
 // ─── DATE UTILS ──────────────────────────────
 const toDateKey = (d)=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return`${y}-${m}-${day}`;};
+const parseTimeToMin=(t)=>{
+  if(!t)return null;
+  const m=String(t).match(/^(\d{1,2}):(\d{2})/);
+  if(!m)return null;
+  return parseInt(m[1],10)*60+parseInt(m[2],10);
+};
+const buildDayLayout=(events)=>{
+  const timed=[],allDay=[];
+  events.forEach(e=>{
+    const start=parseTimeToMin(e.time);
+    if(start==null){allDay.push(e);return;}
+    let end=parseTimeToMin(e.endTime);
+    if(end==null||end<=start)end=start+60;
+    timed.push({ev:e,start,end});
+  });
+  timed.sort((a,b)=>a.start-b.start||a.end-b.end);
+  const laidOut=[];
+  timed.forEach(t=>{
+    const overlapping=laidOut.filter(o=>o.start<t.end&&o.end>t.start);
+    const used=new Set(overlapping.map(o=>o.col));
+    let col=0;while(used.has(col))col++;
+    laidOut.push({...t,col});
+  });
+  laidOut.forEach(t=>{
+    const overlapping=laidOut.filter(o=>o.start<t.end&&o.end>t.start);
+    t.totalCols=Math.max(...overlapping.map(o=>o.col))+1;
+  });
+  return{timed:laidOut,allDay};
+};
 const isEventVisible=(e,state)=>{
   if(e.category==='work'&&!state.workVisible)return false;
   if(e.category==='personal'&&!state.personalVisible)return false;
@@ -5277,31 +5306,126 @@ function WeeklyDayRow({date}){
     </div>
   );
 }
+const WK_ROW_H=48;
+const WK_TIME_COL_W=44;
+function WeeklyTimeGrid({weekDates}){
+  const{state,dispatch}=useStore();
+  const catStyle=useDynCatStyle();
+  const{calendarScrollRef}=useLayout();
+  const[popoverDate,setPopoverDate]=useState(null);
+  const[detailEvent,setDetailEvent]=useState(null);
+  const[noteMdl,setNoteMdl]=useState(null);
+  const projById=React.useMemo(()=>Object.fromEntries((state.projects||[]).map(p=>[p.id,p])),[state.projects]);
+  const today=toDateKey(new Date());
+  const dowKr=['일','월','화','수','목','금','토'];
+  const eventsFor=(dk)=>(state.weeklyEvents||[]).filter(e=>e.date===dk&&isEventVisible(e,state));
+  const layoutByDay=React.useMemo(()=>{
+    const m={};
+    weekDates.forEach(d=>{const dk=toDateKey(d);m[dk]=buildDayLayout(eventsFor(dk));});
+    return m;
+  },[weekDates,state.weeklyEvents,state.workVisible,state.personalVisible,state.outlookVisible,state.customLayers,state.projects]);
+  const anyAllDay=weekDates.some(d=>layoutByDay[toDateKey(d)].allDay.length>0);
+  React.useEffect(()=>{
+    if(calendarScrollRef?.current)calendarScrollRef.current.scrollTop=7*WK_ROW_H-40;
+  },[state.weekOffset]);
+  return(
+    <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0}}>
+      <div style={{display:'flex',borderBottom:'0.5px solid #EDEDEA',flexShrink:0,backgroundColor:'#fff'}}>
+        <div style={{width:WK_TIME_COL_W,flexShrink:0}}/>
+        {weekDates.map(d=>{
+          const dk=toDateKey(d);const isToday_=dk===today;
+          return(
+            <div key={dk} style={{flex:1,textAlign:'center',padding:'7px 0',borderLeft:'0.5px solid #EFEFF3',backgroundColor:isToday_?'rgba(var(--acc-rgb),0.06)':'transparent'}}>
+              <div style={{fontSize:9.5,fontWeight:600,color:d.getDay()===0?'#D06A6A':d.getDay()===6?'#4EB8B8':'#B0B0B6'}}>{dowKr[d.getDay()]}</div>
+              <div style={{fontSize:14,fontWeight:700,color:isToday_?'#fff':'#2C2C2E',width:23,height:23,lineHeight:'23px',
+                borderRadius:'50%',backgroundColor:isToday_?'var(--acc)':'transparent',margin:'2px auto 0'}}>{d.getDate()}</div>
+            </div>
+          );
+        })}
+      </div>
+      {anyAllDay&&(
+        <div style={{display:'flex',borderBottom:'0.5px solid #EDEDEA',flexShrink:0,minHeight:22,backgroundColor:'#fff'}}>
+          <div style={{width:WK_TIME_COL_W,flexShrink:0,fontSize:8,color:'#B0B0B6',textAlign:'right',paddingRight:5,paddingTop:3}}>종일</div>
+          {weekDates.map(d=>{
+            const dk=toDateKey(d);
+            return(
+              <div key={dk} style={{flex:1,borderLeft:'0.5px solid #EFEFF3',padding:'2px 3px',display:'flex',flexDirection:'column',gap:2}}>
+                {layoutByDay[dk].allDay.map(e=>{
+                  const cs=catStyle[e.category]||catStyle.work;const col=(projById[e.projectId]&&projById[e.projectId].color)||cs.dot;
+                  return<div key={e.id} onClick={()=>setDetailEvent(e)} title={e.title}
+                    style={{fontSize:9,fontWeight:600,color:col,backgroundColor:lighten(col,0.85),borderRadius:4,padding:'1px 5px',cursor:'pointer',
+                      overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.title}</div>;
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div ref={calendarScrollRef} style={{flex:1,overflowY:'auto',position:'relative'}}>
+        <div style={{display:'flex',position:'relative'}}>
+          <div style={{width:WK_TIME_COL_W,flexShrink:0}}>
+            {Array.from({length:24},(_,h)=>(
+              <div key={h} style={{height:WK_ROW_H,position:'relative'}}>
+                {h>0&&<span style={{position:'absolute',top:-6,right:5,fontSize:8.5,color:'#C4C4CA',backgroundColor:'#FAFAF7'}}>{h<12?h+'AM':h===12?'12PM':(h-12)+'PM'}</span>}
+              </div>
+            ))}
+          </div>
+          {weekDates.map(d=>{
+            const dk=toDateKey(d);const isToday_=dk===today;
+            const{timed}=layoutByDay[dk];
+            return(
+              <div key={dk} data-daykey={dk} style={{flex:1,position:'relative',borderLeft:'0.5px solid #EFEFF3',
+                backgroundColor:isToday_?'rgba(var(--acc-rgb),0.03)':'transparent'}}>
+                {Array.from({length:24},(_,h)=>(
+                  <div key={h} onDoubleClick={()=>setPopoverDate(dk)} title="더블클릭 → 일정 추가"
+                    style={{height:WK_ROW_H,borderBottom:'0.5px solid #F5F5F2',cursor:'pointer'}}/>
+                ))}
+                {timed.map(({ev,start,end,col,totalCols})=>{
+                  const cs=catStyle[ev.category]||catStyle.work;
+                  const barColor=(projById[ev.projectId]&&projById[ev.projectId].color)||cs.dot;
+                  const top=(start/60)*WK_ROW_H;
+                  const height=Math.max(18,((end-start)/60)*WK_ROW_H-2);
+                  const wPct=100/totalCols;
+                  return(
+                    <div key={ev.id} onClick={()=>setDetailEvent(ev)} title={ev.title}
+                      style={{position:'absolute',top,left:`calc(${col*wPct}% + 1px)`,width:`calc(${wPct}% - 2px)`,height,
+                        backgroundColor:ev.done?'#F0F0EE':lighten(barColor,0.85),borderLeft:`2.5px solid ${ev.done?'#C8C8C4':barColor}`,
+                        borderRadius:4,padding:'2px 5px',overflow:'hidden',cursor:'pointer',zIndex:2,
+                        boxShadow:'0 1px 2px rgba(0,0,0,0.07)',opacity:ev.done?0.6:1}}>
+                      <div style={{fontSize:10,fontWeight:700,color:ev.done?'#999':barColor,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',
+                        textDecoration:ev.done?'line-through':'none'}}>{ev.title}</div>
+                      {height>30&&<div style={{fontSize:8.5,color:barColor,opacity:0.8}}>{ev.time}{ev.endTime?'–'+ev.endTime:''}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+        <StickyNotesCanvas/>
+        <StickerCanvas/>
+      </div>
+      {popoverDate&&<EventPopover date={popoverDate} onClose={()=>setPopoverDate(null)}/>}
+      {detailEvent&&<EventDetailPopover event={detailEvent}
+        onClose={()=>setDetailEvent(null)}
+        onDelete={()=>{dispatch({type:'DELETE_EVENT',id:detailEvent.id});setDetailEvent(null);}}
+        onUpdate={updates=>{dispatch({type:'UPDATE_EVENT',id:detailEvent.id,updates});setDetailEvent(null);}}
+        onOpenNote={note=>{setDetailEvent(null);setTimeout(()=>setNoteMdl(note),50);}}/>}
+      {noteMdl&&<MeetingNoteModal initialNote={noteMdl} onClose={()=>setNoteMdl(null)}/>}
+    </div>
+  );
+}
 function WeeklySection(){
   const{state,dispatch}=useStore();
-  const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,calendarScrollRef,isMobile}=useLayout();
+  const{freeLayerVisible,setFreeLayerVisible,setStickerMode,setRightDockOpen,isMobile}=useLayout();
   const weekDates=getWeekDates(state.weekOffset);
-  React.useEffect(()=>{
-    if(state.weekOffset!==0)return;
-    const todayKey=toDateKey(new Date());
-    const container=calendarScrollRef?.current;
-    if(!container)return;
-    requestAnimationFrame(()=>{
-      const el=container.querySelector(`[data-daykey="${todayKey}"]`);
-      if(el)container.scrollTop=el.offsetTop;
-    });
-  },[state.weekOffset]);
   return(
     <section style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,backgroundColor:'#FAFAF7',position:'relative'}}>
       <WeeklyHeader weekDates={weekDates}
         onPrev={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset-1})}
         onNext={()=>dispatch({type:'SET_WEEK_OFFSET',payload:state.weekOffset+1})}
         onToday={()=>dispatch({type:'SET_WEEK_OFFSET',payload:0})}/>
-      <div ref={calendarScrollRef} style={{flex:1,overflowY:'auto',position:'relative'}}>
-        {weekDates.map(d=><WeeklyDayRow key={toDateKey(d)} date={d}/>)}
-        <StickyNotesCanvas/>
-        <StickerCanvas/>
-      </div>
+      <WeeklyTimeGrid weekDates={weekDates}/>
       {!isMobile&&<button data-fab="true" onClick={()=>{setFreeLayerVisible(true);setStickerMode(true);setRightDockOpen(true);}}
         title="포스트잇·스티커 추가"
         style={{position:'fixed',right:26,bottom:26,width:48,height:48,borderRadius:'50%',
