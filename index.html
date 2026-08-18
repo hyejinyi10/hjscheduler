@@ -377,7 +377,7 @@ function reducer(state,action){
     case 'ADD_IDEA_PAGE':return{...state,ideaNotes:[action.note,...state.ideaNotes]};
     case 'UPDATE_IDEA_PAGE':return{...state,ideaNotes:state.ideaNotes.map(n=>n.id===action.id?{...n,...action.updates}:n)};
     case 'DELETE_IDEA':return{...state,ideaNotes:state.ideaNotes.filter(n=>n.id!==action.id)};
-    case 'ADD_EXWISH':return{...state,exhibitionWishlist:[{id:uid(),title:action.title,venue:action.venue||'',date:action.date||'',note:action.note||'',createdAt:new Date().toISOString()},...state.exhibitionWishlist]};
+    case 'ADD_EXWISH':return{...state,exhibitionWishlist:[{id:uid(),title:action.title,venue:action.venue||'',date:action.date||'',note:action.note||'',companion:action.companion||'',createdAt:new Date().toISOString()},...state.exhibitionWishlist]};
     case 'UPDATE_EXWISH':return{...state,exhibitionWishlist:state.exhibitionWishlist.map(w=>w.id===action.id?{...w,...action.updates}:w)};
     case 'DELETE_EXWISH':return{...state,exhibitionWishlist:state.exhibitionWishlist.filter(w=>w.id!==action.id)};
     case 'SET_THEME':return{...state,[action.key]:action.value};
@@ -1937,12 +1937,25 @@ function ExhibitionModal({onClose}){
   const[date,setDate]=useState('');
   const[editingId,setEditingId]=useState(null);
   const[editVal,setEditVal]=useState('');
-  useEffect(()=>{const h=(e)=>{if(e.key==='Escape')onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
+  const[updateOpen,setUpdateOpen]=useState(false);
+  const[copied,setCopied]=useState(false);
+  const[addPopup,setAddPopup]=useState(null); // {title,venue}
+  const[popDate,setPopDate]=useState('');
+  const[popCompanion,setPopCompanion]=useState('');
+  const dateInputRef=useRef(null);
+  useEffect(()=>{const h=(e)=>{if(e.key==='Escape'){if(addPopup)setAddPopup(null);else onClose();}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[addPopup]);
   const monthsSince=(()=>{
     const[y,m]=EXHIBITION_DATA_MONTH.split('-').map(Number);
     const now=new Date();
     return (now.getFullYear()-y)*12+(now.getMonth()+1-m);
   })();
+  const todayLabel=(()=>{const d=new Date();return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`;})();
+  const requestText=`오늘(${todayLabel}) 기준으로 3개월 이내 진행되는 디자인/건축/인테리어/회화 전시 TOP10으로 스케줄러 전시 정보를 업데이트해줘.`;
+  const copyRequest=()=>{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(requestText).then(()=>{setCopied(true);showToast('복사했어요 — Claude에게 붙여넣어 보내주세요','success');setTimeout(()=>setCopied(false),2000);});
+    }
+  };
   const add=()=>{
     const t=title.trim();if(!t)return;
     dispatch({type:'ADD_EXWISH',title:t,venue:venue.trim(),date});
@@ -1955,6 +1968,18 @@ function ExhibitionModal({onClose}){
   };
   const startEdit=(w)=>{setEditingId(w.id);setEditVal(w.title);};
   const commitEdit=()=>{const t=editVal.trim();if(t)dispatch({type:'UPDATE_EXWISH',id:editingId,updates:{title:t}});setEditingId(null);};
+  const openAddPopup=(p)=>{
+    const dup=state.exhibitionWishlist.some(w=>w.title===p.title);
+    if(dup){showToast('이미 담겨있어요','error');return;}
+    setAddPopup({title:p.title,venue:p.venue});
+    setPopDate('');setPopCompanion('');
+    setTimeout(()=>{if(dateInputRef.current){dateInputRef.current.focus();try{dateInputRef.current.showPicker();}catch(err){}}},60);
+  };
+  const confirmAddPopup=()=>{
+    dispatch({type:'ADD_EXWISH',title:addPopup.title,venue:addPopup.venue,date:popDate,companion:popCompanion.trim()});
+    showToast('가고싶은 전시에 담았어요','success');
+    setAddPopup(null);
+  };
   return(
     <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.32)',zIndex:8500,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
       <div style={{width:640,maxWidth:'94vw',maxHeight:'86vh',minHeight:380,backgroundColor:'#fff',borderRadius:14,
@@ -1967,34 +1992,65 @@ function ExhibitionModal({onClose}){
           <button onClick={onClose} style={{fontSize:18,color:'#CCC',lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color='#999'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
-          {/* 큐레이션 TOP5 */}
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          {/* 큐레이션 TOP10 */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
             <span style={{fontSize:11,fontWeight:700,color:'var(--acc)',letterSpacing:'0.3px'}}>요즘 화제의 전시 TOP 10</span>
             <span style={{fontSize:10,color:'#C4C4C4'}}>{EXHIBITION_DATA_MONTH.replace('-','.')} 기준</span>
-            {monthsSince>=2&&<span style={{fontSize:10,color:'#E24B4A',backgroundColor:'#FFF0EF',borderRadius:8,padding:'1px 7px'}}>정보가 {monthsSince}개월 전 것이에요 — Claude에게 "전시 정보 새로고침해줘"라고 요청해보세요</span>}
+            {monthsSince>=2&&<span style={{fontSize:10,color:'#E24B4A',backgroundColor:'#FFF0EF',borderRadius:8,padding:'1px 7px'}}>정보가 {monthsSince}개월 전 것이에요</span>}
+            <button onClick={()=>setUpdateOpen(v=>!v)} style={{fontSize:10.5,color:'var(--acc)',padding:'2px 9px',borderRadius:6,backgroundColor:'var(--acc-bg)',border:'0.5px solid var(--acc-brd)',cursor:'pointer'}}>🔄 업데이트</button>
           </div>
+          {updateOpen&&(
+            <div style={{backgroundColor:'#F7F7F5',border:'0.5px solid #E8E8E4',borderRadius:9,padding:'10px 12px',marginBottom:14}}>
+              <div style={{fontSize:11,color:'#8A8A86',lineHeight:1.5,marginBottom:7}}>
+                이 목록은 정적 사이트라 자동으로 새 정보를 가져올 수 없어요. 아래 문구를 복사해서 <b>Claude와의 대화창</b>에 붙여넣어 보내주면, 오늘 날짜 기준 3개월 이내 전시로 다시 조사해서 업데이트해줄게요.
+              </div>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <div style={{flex:1,fontSize:11.5,color:'#444',backgroundColor:'#fff',border:'0.5px solid #E4E4E0',borderRadius:6,padding:'6px 9px'}}>{requestText}</div>
+                <button onClick={copyRequest} style={{fontSize:11,fontWeight:600,color:'#fff',backgroundColor:copied?'#7BA88B':'var(--acc)',padding:'6px 12px',borderRadius:6,flexShrink:0,cursor:'pointer'}}>{copied?'복사됨 ✓':'복사하기'}</button>
+              </div>
+            </div>
+          )}
           <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:18}}>
             {EXHIBITION_PICKS.map((p,i)=>{
               const c=tagColor(p.tag);
+              const isAdding=addPopup&&addPopup.title===p.title;
               return(
-                <div key={i} style={{display:'flex',gap:10,padding:'9px 11px',borderRadius:9,border:'0.5px solid #EDEDEA',backgroundColor:'#FAFAF8'}}>
-                  <div style={{width:20,flexShrink:0,fontSize:13,fontWeight:800,color:i<3?'var(--acc)':'#C8C8C4',textAlign:'center',paddingTop:2}}>{i+1}</div>
-                  <div style={{width:3,flexShrink:0,borderRadius:2,backgroundColor:c}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                      <span style={{fontSize:13,fontWeight:700,color:'#2C2C2E'}}>{p.title}</span>
-                      <span style={{fontSize:9.5,fontWeight:600,color:c,backgroundColor:lighten(c,0.86),borderRadius:9,padding:'1px 7px',flexShrink:0}}>{p.tag}</span>
+                <div key={i} style={{borderRadius:9,border:'0.5px solid #EDEDEA',backgroundColor:'#FAFAF8',overflow:'hidden'}}>
+                  <div onClick={()=>!isAdding&&openAddPopup(p)} style={{display:'flex',gap:10,padding:'9px 11px',cursor:'pointer'}}>
+                    <div style={{width:20,flexShrink:0,fontSize:13,fontWeight:800,color:i<3?'var(--acc)':'#C8C8C4',textAlign:'center',paddingTop:2}}>{i+1}</div>
+                    <div style={{width:3,flexShrink:0,borderRadius:2,backgroundColor:c}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                        <span style={{fontSize:13,fontWeight:700,color:'#2C2C2E'}}>{p.title}</span>
+                        <span style={{fontSize:9.5,fontWeight:600,color:c,backgroundColor:lighten(c,0.86),borderRadius:9,padding:'1px 7px',flexShrink:0}}>{p.tag}</span>
+                      </div>
+                      <div style={{fontSize:11,color:'#8A8A86',marginBottom:3}}>{p.venue} · {p.period}</div>
+                      <div style={{fontSize:11.5,color:'#555',lineHeight:1.4}}>{p.blurb}</div>
                     </div>
-                    <div style={{fontSize:11,color:'#8A8A86',marginBottom:3}}>{p.venue} · {p.period}</div>
-                    <div style={{fontSize:11.5,color:'#555',lineHeight:1.4}}>{p.blurb}</div>
+                    <button onClick={e=>{e.stopPropagation();openAddPopup(p);}}
+                      title="가고싶은 전시에 담기" style={{fontSize:11,color:'var(--acc)',padding:'4px 10px',borderRadius:6,backgroundColor:'var(--acc-bg)',flexShrink:0,alignSelf:'flex-start',height:'fit-content'}}>+ 담기</button>
                   </div>
-                  <button onClick={()=>{
-                    const dup=state.exhibitionWishlist.some(w=>w.title===p.title);
-                    if(dup){showToast('이미 담겨있어요','error');return;}
-                    dispatch({type:'ADD_EXWISH',title:p.title,venue:p.venue,date:''});
-                    showToast('가고싶은 전시에 담았어요','success');
-                  }}
-                    title="가고싶은 전시에 담기" style={{fontSize:11,color:'var(--acc)',padding:'4px 10px',borderRadius:6,backgroundColor:'var(--acc-bg)',flexShrink:0,alignSelf:'flex-start',height:'fit-content'}}>+ 담기</button>
+                  {isAdding&&(
+                    <div onClick={e=>e.stopPropagation()} style={{padding:'10px 11px 12px',borderTop:'0.5px solid #EDEDEA',backgroundColor:'#fff',display:'flex',flexDirection:'column',gap:8}}>
+                      <div style={{fontSize:10.5,color:'#8A8A86'}}>언제 갈지 골라두면 캘린더에도 같이 넣어둘 수 있어요</div>
+                      <div style={{display:'flex',gap:8}}>
+                        <div style={{flex:1}}>
+                          <label style={{fontSize:10,color:'#AAA',display:'block',marginBottom:3}}>날짜(선택)</label>
+                          <input ref={dateInputRef} type="date" value={popDate} onChange={e=>setPopDate(e.target.value)}
+                            style={{width:'100%',fontSize:12,color:'#444',border:'0.5px solid #E0E0E0',borderRadius:6,padding:'5px 8px'}}/>
+                        </div>
+                        <div style={{flex:1}}>
+                          <label style={{fontSize:10,color:'#AAA',display:'block',marginBottom:3}}>동행 여부(선택)</label>
+                          <input value={popCompanion} onChange={e=>setPopCompanion(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')confirmAddPopup();}}
+                            placeholder="누구랑 갈지" style={{width:'100%',fontSize:12,color:'#444',border:'0.5px solid #E0E0E0',borderRadius:6,padding:'5px 8px',boxSizing:'border-box'}}/>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+                        <button onClick={()=>setAddPopup(null)} style={{fontSize:11,color:'#999',padding:'5px 12px',borderRadius:6}}>취소</button>
+                        <button onClick={confirmAddPopup} style={{fontSize:11,fontWeight:600,color:'#fff',backgroundColor:'var(--acc)',padding:'5px 14px',borderRadius:6}}>담기</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -2013,18 +2069,20 @@ function ExhibitionModal({onClose}){
           {state.exhibitionWishlist.length===0&&<div style={{fontSize:11.5,color:'#D0D0CA',padding:'8px 0'}}>아직 담아둔 전시가 없어요</div>}
           <div style={{display:'flex',flexDirection:'column',gap:1}}>
             {state.exhibitionWishlist.map(w=>(
-              <div key={w.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',borderRadius:7}}
+              <div key={w.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',borderRadius:7,flexWrap:'wrap'}}
                 onMouseEnter={e=>e.currentTarget.style.backgroundColor='#FAFAF8'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='transparent'}>
                 <span style={{width:5,height:5,borderRadius:'50%',backgroundColor:'#B79C7A',flexShrink:0}}/>
                 {editingId===w.id?
                   <input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitEdit}
                     onKeyDown={e=>{if(e.key==='Enter')commitEdit();if(e.key==='Escape')setEditingId(null);}}
                     style={{flex:1,fontSize:12.5,borderBottom:'0.5px solid #DDD'}}/>
-                  :<span onDoubleClick={()=>startEdit(w)} style={{flex:1,fontSize:12.5,color:'#333',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text'}} title="더블클릭 → 수정">
+                  :<span onDoubleClick={()=>startEdit(w)} style={{flex:1,fontSize:12.5,color:'#333',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text',minWidth:120}} title="더블클릭 → 수정">
                     {w.title}{w.venue?<span style={{color:'#B0B0B6'}}> · {w.venue}</span>:null}
                   </span>}
                 <input type="date" value={w.date||''} onChange={e=>dispatch({type:'UPDATE_EXWISH',id:w.id,updates:{date:e.target.value}})}
                   style={{fontSize:10.5,color:'#8A8A86',width:104,flexShrink:0}}/>
+                <input value={w.companion||''} onChange={e=>dispatch({type:'UPDATE_EXWISH',id:w.id,updates:{companion:e.target.value}})}
+                  placeholder="👥 동행" style={{fontSize:10.5,color:'#8A8A86',width:84,flexShrink:0,borderBottom:'0.5px solid #F0F0F0'}}/>
                 <button onClick={()=>addToSchedule(w)} title="일정에 추가" style={{fontSize:10.5,fontWeight:600,color:'var(--acc)',padding:'3px 9px',borderRadius:6,backgroundColor:'var(--acc-bg)',flexShrink:0}}>📅 일정추가</button>
                 <button onClick={()=>dispatch({type:'DELETE_EXWISH',id:w.id})} style={{fontSize:13,color:'#DADADA',flexShrink:0}}
                   onMouseEnter={e=>e.currentTarget.style.color='#E24B4A'} onMouseLeave={e=>e.currentTarget.style.color='#DADADA'}>×</button>
