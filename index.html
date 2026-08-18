@@ -1826,12 +1826,16 @@ function IdeaBoardModal({onClose}){
   const{state,dispatch}=useStore();
   const[view,setView]=useState('table'); // 'table' | 'board'
   const[openPage,setOpenPage]=useState(null);
+  const[filterTag,setFilterTag]=useState(null); // null = 전체
   useEffect(()=>{const h=(e)=>{if(e.key==='Escape'&&!openPage)onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[openPage]);
   const existingTags=React.useMemo(()=>{
     const seen={};const arr=[];
     state.ideaNotes.forEach(n=>{const t=n.tag||'미분류';if(!seen[t]){seen[t]=1;arr.push(t);}});
     return arr;
   },[state.ideaNotes]);
+  const filteredNotes=React.useMemo(()=>
+    filterTag?state.ideaNotes.filter(n=>(n.tag||'미분류')===filterTag):state.ideaNotes,
+  [state.ideaNotes,filterTag]);
   const previewOf=(note)=>{
     for(const b of (note.blocks||[])){
       if(b.type==='drawing')return '🖼 그림';
@@ -1844,9 +1848,9 @@ function IdeaBoardModal({onClose}){
   const fmtDate=(iso)=>{const d=new Date(iso);return `${d.getMonth()+1}/${d.getDate()}`;};
   const grouped=React.useMemo(()=>{
     const m={};
-    state.ideaNotes.forEach(n=>{const k=n.tag||'미분류';(m[k]=m[k]||[]).push(n);});
+    filteredNotes.forEach(n=>{const k=n.tag||'미분류';(m[k]=m[k]||[]).push(n);});
     return Object.entries(m).sort((a,b)=>b[1].length-a[1].length);
-  },[state.ideaNotes]);
+  },[filteredNotes]);
   const newPage=()=>setOpenPage({});
   return(
     <div onClick={e=>{if(e.target===e.currentTarget&&!openPage)onClose();}} style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.32)',zIndex:8500,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.15s ease'}}>
@@ -1866,11 +1870,31 @@ function IdeaBoardModal({onClose}){
           <button onClick={onClose} style={{fontSize:18,color:'#CCC',lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color='#999'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>×</button>
         </div>
         {/* Body */}
+        {existingTags.length>0&&(
+          <div style={{display:'flex',gap:5,flexWrap:'wrap',padding:'10px 20px 0'}}>
+            <button onClick={()=>setFilterTag(null)}
+              style={{fontSize:10.5,fontWeight:600,padding:'3px 10px',borderRadius:20,cursor:'pointer',
+                border:`0.5px solid ${!filterTag?'var(--acc-brd)':'#E8E8E8'}`,
+                backgroundColor:!filterTag?'var(--acc-bg)':'#F8F8F8',color:!filterTag?'var(--acc)':'#96969E'}}>전체 {state.ideaNotes.length}</button>
+            {existingTags.map(t=>{
+              const c=tagColor(t);const cnt=state.ideaNotes.filter(n=>(n.tag||'미분류')===t).length;const active=filterTag===t;
+              return(
+                <button key={t} onClick={()=>setFilterTag(active?null:t)}
+                  style={{fontSize:10.5,fontWeight:600,padding:'3px 10px',borderRadius:20,cursor:'pointer',
+                    border:`0.5px solid ${active?lighten(c,0.5):'#E8E8E8'}`,
+                    backgroundColor:active?lighten(c,0.86):'#F8F8F8',color:active?c:'#96969E'}}>{t} {cnt}</button>
+              );
+            })}
+          </div>
+        )}
         <div style={{flex:1,overflowY:'auto',padding:view==='board'?'14px 16px':'4px 0'}}>
           {state.ideaNotes.length===0&&(
             <div style={{textAlign:'center',color:'#D0D0CA',fontSize:12.5,padding:'50px 0'}}>아직 적어둔 아이디어가 없어요<br/><span style={{fontSize:11}}>위 "+ 새 아이디어"로 시작해보세요</span></div>
           )}
-          {view==='table'&&state.ideaNotes.length>0&&(
+          {state.ideaNotes.length>0&&filteredNotes.length===0&&(
+            <div style={{textAlign:'center',color:'#D0D0CA',fontSize:12.5,padding:'50px 0'}}>"{filterTag}" 카테고리에는 아이디어가 없어요</div>
+          )}
+          {view==='table'&&filteredNotes.length>0&&(
             <table style={{width:'100%',borderCollapse:'collapse'}}>
               <thead>
                 <tr style={{borderBottom:'0.5px solid #EEEEF0'}}>
@@ -1880,7 +1904,7 @@ function IdeaBoardModal({onClose}){
                 </tr>
               </thead>
               <tbody>
-                {state.ideaNotes.map(n=>{
+                {filteredNotes.map(n=>{
                   const c=tagColor(n.tag);
                   return(
                     <tr key={n.id} onClick={()=>setOpenPage(n)} style={{cursor:'pointer',borderBottom:'0.5px solid #F5F5F2'}}
