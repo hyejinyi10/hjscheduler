@@ -2055,6 +2055,57 @@ function ExhibitionModal({onClose}){
   const[popDate,setPopDate]=useState('');
   const[popCompanion,setPopCompanion]=useState('');
   const dateInputRef=useRef(null);
+  const[natLoading,setNatLoading]=useState(false);
+  const[natError,setNatError]=useState(null);
+  const[natList,setNatList]=useState(()=>{try{return JSON.parse(localStorage.getItem('natExhibitionsCache')||'[]');}catch(err){return[];}});
+  const[natKeyEditing,setNatKeyEditing]=useState(false);
+  const[natKeyInput,setNatKeyInput]=useState('');
+  const[hasNatKey,setHasNatKey]=useState(!!localStorage.getItem('cultureApiKey'));
+  const natCacheAt=localStorage.getItem('natExhibitionsCacheAt');
+  const saveNatKey=()=>{
+    const k=natKeyInput.trim();
+    if(!k)return;
+    localStorage.setItem('cultureApiKey',k);
+    setHasNatKey(true);setNatKeyEditing(false);setNatKeyInput('');
+    showToast('API 키 저장했어요','success');
+  };
+  const clearNatKey=()=>{
+    localStorage.removeItem('cultureApiKey');
+    setHasNatKey(false);setNatList([]);localStorage.removeItem('natExhibitionsCache');
+  };
+  const fetchNational=async()=>{
+    const key=localStorage.getItem('cultureApiKey');
+    if(!key){setNatKeyEditing(true);return;}
+    setNatLoading(true);setNatError(null);
+    try{
+      const today=new Date();
+      const to=new Date(today);to.setMonth(to.getMonth()+3);
+      const fmt=(d)=>`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+      const url=`https://www.culture.go.kr/openapi/rest/publicperformancedisplays/period?serviceKey=${encodeURIComponent(key)}&from=${fmt(today)}&to=${fmt(to)}&cPage=1&rows=40&sortStdr=1`;
+      const res=await fetch(url);
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const text=await res.text();
+      const doc=new DOMParser().parseFromString(text,'text/xml');
+      if(doc.querySelector('parsererror'))throw new Error('응답을 읽을 수 없어요 (형식 오류)');
+      const rc=doc.querySelector('resultCode')?.textContent;
+      if(rc&&rc!=='0000')throw new Error(doc.querySelector('resultMsg')?.textContent||('API 오류 ('+rc+')'));
+      const get=(it,tags)=>{for(const t of tags){const el=it.querySelector(t);if(el&&el.textContent&&el.textContent.trim())return el.textContent.trim();}return '';};
+      const items=[...doc.querySelectorAll('item')].map(it=>({
+        title:get(it,['title']),
+        place:get(it,['place']),
+        period:get(it,['period']),
+        realm:get(it,['realmName','realm']),
+        url:get(it,['url']),
+      })).filter(it=>it.title&&(!it.realm||it.realm.includes('전시')));
+      setNatList(items);
+      localStorage.setItem('natExhibitionsCache',JSON.stringify(items));
+      localStorage.setItem('natExhibitionsCacheAt',new Date().toISOString());
+    }catch(err){
+      setNatError((err&&err.message)||'불러오기 실패 — 브라우저에서 이 API로 직접 접근이 막혀있을 수 있어요(CORS)');
+    }finally{
+      setNatLoading(false);
+    }
+  };
   useEffect(()=>{const h=(e)=>{if(e.key==='Escape'){if(addPopup)setAddPopup(null);else onClose();}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[addPopup]);
   const monthsSince=(()=>{
     const[y,m]=EXHIBITION_DATA_MONTH.split('-').map(Number);
@@ -2166,6 +2217,50 @@ function ExhibitionModal({onClose}){
                 </div>
               );
             })}
+          </div>
+          {/* 국립기관 전시 목록 (공공데이터 API, 자동) */}
+          <div style={{marginBottom:18}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,flexWrap:'wrap'}}>
+              <span style={{fontSize:11,fontWeight:700,color:'#6B8FA8',letterSpacing:'0.3px'}}>🏛 국립기관 전시 목록</span>
+              <span style={{fontSize:10,color:'#C4C4C4'}}>3개월 이내 · 공공데이터 자동조회</span>
+              <button onClick={fetchNational} disabled={natLoading}
+                style={{fontSize:10.5,color:'#6B8FA8',padding:'2px 9px',borderRadius:6,backgroundColor:'#EEF3F6',border:'0.5px solid #D8E4EA',cursor:'pointer'}}>
+                {natLoading?'불러오는 중...':'🔄 새로고침'}
+              </button>
+              {hasNatKey&&<button onClick={()=>setNatKeyEditing(v=>!v)} style={{fontSize:10,color:'#B0B0B6',padding:'2px 7px',borderRadius:6,cursor:'pointer'}}>🔑 키 변경</button>}
+              {!hasNatKey&&!natKeyEditing&&<button onClick={()=>setNatKeyEditing(true)} style={{fontSize:10.5,color:'#6B8FA8',textDecoration:'underline',cursor:'pointer'}}>API 키 등록하기</button>}
+            </div>
+            {natKeyEditing&&(
+              <div style={{backgroundColor:'#F7F9FA',border:'0.5px solid #E0E8EC',borderRadius:8,padding:'9px 11px',marginBottom:8,display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                <input value={natKeyInput} onChange={e=>setNatKeyInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveNatKey();}}
+                  placeholder="data.go.kr에서 발급받은 서비스키(인증키) 붙여넣기" style={{flex:1,minWidth:200,fontSize:11.5,border:'0.5px solid #DCE4E8',borderRadius:6,padding:'5px 8px'}}/>
+                <button onClick={saveNatKey} style={{fontSize:11,fontWeight:600,color:'#fff',backgroundColor:'#6B8FA8',padding:'5px 12px',borderRadius:6,cursor:'pointer'}}>저장</button>
+                {hasNatKey&&<button onClick={clearNatKey} style={{fontSize:10.5,color:'#C97A7A',padding:'5px 10px',borderRadius:6,cursor:'pointer'}}>키 삭제</button>}
+                <div style={{fontSize:10,color:'#98A8AE',width:'100%'}}>data.go.kr 가입 → "공연전시정보조회서비스" 또는 "12개 기관 전시정보" 검색 → 활용신청 → 발급된 인증키(Encoding 또는 Decoding) 붙여넣기</div>
+              </div>
+            )}
+            {natError&&<div style={{fontSize:11,color:'#C97A7A',backgroundColor:'#FFF3F2',borderRadius:7,padding:'7px 10px',marginBottom:8}}>⚠ {natError}</div>}
+            {!natError&&natList.length===0&&!natLoading&&hasNatKey&&(
+              <div style={{fontSize:11,color:'#B0B0B6',padding:'4px 0 8px'}}>새로고침을 눌러 불러와보세요</div>
+            )}
+            {!hasNatKey&&!natKeyEditing&&(
+              <div style={{fontSize:11,color:'#B0B0B6',padding:'4px 0 8px'}}>API 키를 등록하면 국립현대미술관·예술의전당·서울시립미술관 등 국립기관 전시를 자동으로 불러올 수 있어요</div>
+            )}
+            {natList.length>0&&(
+              <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                {natList.map((n,i)=>(
+                  <div key={i} onClick={()=>openAddPopup({title:n.title,venue:n.place})}
+                    style={{display:'flex',gap:8,padding:'7px 10px',borderRadius:8,border:'0.5px solid #E8EEF0',backgroundColor:'#FBFCFD',cursor:'pointer'}}
+                    onMouseEnter={e=>e.currentTarget.style.backgroundColor='#F3F7F8'} onMouseLeave={e=>e.currentTarget.style.backgroundColor='#FBFCFD'}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:'#2C2C2E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.title}</div>
+                      <div style={{fontSize:10.5,color:'#8A9AA0'}}>{n.place}{n.period?' · '+n.period:''}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {natCacheAt&&natList.length>0&&<div style={{fontSize:9.5,color:'#C4C4C4',marginTop:4}}>마지막 조회: {new Date(natCacheAt).toLocaleString('ko-KR')}</div>}
           </div>
           {/* 내 위시리스트 */}
           <div style={{fontSize:11,fontWeight:700,color:'#7BA88B',letterSpacing:'0.3px',marginBottom:8}}>내가 가고싶은 전시</div>
