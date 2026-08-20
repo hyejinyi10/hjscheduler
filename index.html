@@ -2081,14 +2081,24 @@ function ExhibitionModal({onClose}){
       const today=new Date();
       const to=new Date(today);to.setMonth(to.getMonth()+3);
       const fmt=(d)=>`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-      const url=`https://www.culture.go.kr/openapi/rest/publicperformancedisplays/period?serviceKey=${encodeURIComponent(key)}&from=${fmt(today)}&to=${fmt(to)}&cPage=1&rows=40&sortStdr=1`;
-      const res=await fetch(url);
-      if(!res.ok)throw new Error('HTTP '+res.status);
-      const text=await res.text();
+      const targetUrl=`https://www.culture.go.kr/openapi/rest/publicperformancedisplays/period?serviceKey=${encodeURIComponent(key)}&from=${fmt(today)}&to=${fmt(to)}&cPage=1&rows=40&sortStdr=1`;
+      let text=null,viaProxy=false;
+      try{
+        const res=await fetch(targetUrl);
+        if(!res.ok)throw new Error('HTTP '+res.status);
+        text=await res.text();
+      }catch(directErr){
+        // 직접 호출이 막혀있으면(CORS 등) 무료 프록시로 한 번 더 시도
+        viaProxy=true;
+        const proxied='https://api.allorigins.win/raw?url='+encodeURIComponent(targetUrl);
+        const res2=await fetch(proxied);
+        if(!res2.ok)throw new Error('프록시 경유도 실패했어요 (HTTP '+res2.status+')');
+        text=await res2.text();
+      }
       const doc=new DOMParser().parseFromString(text,'text/xml');
-      if(doc.querySelector('parsererror'))throw new Error('응답을 읽을 수 없어요 (형식 오류)');
+      if(doc.querySelector('parsererror'))throw new Error('응답을 읽을 수 없어요 (형식 오류)'+(viaProxy?' — 프록시 경유':''));
       const rc=doc.querySelector('resultCode')?.textContent;
-      if(rc&&rc!=='0000')throw new Error(doc.querySelector('resultMsg')?.textContent||('API 오류 ('+rc+')'));
+      if(rc&&rc!=='0000')throw new Error((doc.querySelector('resultMsg')?.textContent||('API 오류 ('+rc+')'))+(viaProxy?' — 프록시 경유':''));
       const get=(it,tags)=>{for(const t of tags){const el=it.querySelector(t);if(el&&el.textContent&&el.textContent.trim())return el.textContent.trim();}return '';};
       const items=[...doc.querySelectorAll('item')].map(it=>({
         title:get(it,['title']),
@@ -2100,6 +2110,7 @@ function ExhibitionModal({onClose}){
       setNatList(items);
       localStorage.setItem('natExhibitionsCache',JSON.stringify(items));
       localStorage.setItem('natExhibitionsCacheAt',new Date().toISOString());
+      if(viaProxy)showToast('직접 연결은 막혀있어서 프록시를 거쳐 불러왔어요','success');
     }catch(err){
       setNatError((err&&err.message)||'불러오기 실패 — 브라우저에서 이 API로 직접 접근이 막혀있을 수 있어요(CORS)');
     }finally{
@@ -2237,6 +2248,7 @@ function ExhibitionModal({onClose}){
                 <button onClick={saveNatKey} style={{fontSize:11,fontWeight:600,color:'#fff',backgroundColor:'#6B8FA8',padding:'5px 12px',borderRadius:6,cursor:'pointer'}}>저장</button>
                 {hasNatKey&&<button onClick={clearNatKey} style={{fontSize:10.5,color:'#C97A7A',padding:'5px 10px',borderRadius:6,cursor:'pointer'}}>키 삭제</button>}
                 <div style={{fontSize:10,color:'#98A8AE',width:'100%'}}>data.go.kr 가입 → "공연전시정보조회서비스" 또는 "12개 기관 전시정보" 검색 → 활용신청 → 발급된 인증키(Encoding 또는 Decoding) 붙여넣기</div>
+                <div style={{fontSize:10,color:'#B0A088',width:'100%'}}>⚠ 직접 연결이 막혀있으면 무료 프록시(allorigins.win)를 거쳐 요청해요 — 이 키는 무료 공공데이터용이라 노출돼도 큰 피해는 없지만, 참고해 주세요.</div>
               </div>
             )}
             {natError&&<div style={{fontSize:11,color:'#C97A7A',backgroundColor:'#FFF3F2',borderRadius:7,padding:'7px 10px',marginBottom:8}}>⚠ {natError}</div>}
